@@ -161,15 +161,17 @@ test('built worker isolates schedules by the active Instagram account', async ()
   const first = worker(shared, { userId: '1001' });
   const scheduled = await first.send({
     type: 'SCHEDULE_POST',
-    data: { type: 'post', caption: 'first account', scheduledAt: Date.now() + 60_000 },
+    data: { type: 'post', caption: 'first account', scheduledAt: Date.now() + 60_000, draftId: ' scheduled-fixture ' },
   });
   assert.equal(scheduled.success, true);
+  assert.equal(scheduled.post.draftId, 'scheduled-fixture');
   Object.assign(shared, first.values);
 
   const second = worker(shared, { userId: '2002' });
   assert.equal(JSON.stringify(await second.send({ type: 'GET_SCHEDULED_POSTS' })), '[]');
   const restored = worker(shared, { userId: '1001' });
   assert.equal((await restored.send({ type: 'GET_SCHEDULED_POSTS' }))[0].caption, 'first account');
+  assert.equal((await restored.send({ type: 'GET_SCHEDULED_POSTS' }))[0].draftId, 'scheduled-fixture');
 });
 
 test('built worker reconciles schedule alarms for only the active account', async () => {

@@ -124,6 +124,7 @@ type ScheduleRequest = {
   scheduledAt?: number;
   mediaName?: string | null;
   mediaType?: string | null;
+  draftId?: string | null;
 };
 
 async function broadcast(message: object): Promise<void> {
@@ -194,6 +195,7 @@ function isScheduledPost(value: unknown): value is ScheduledPost {
     && Number.isFinite(post.scheduledAt)
     && (post.mediaName === null || typeof post.mediaName === 'string')
     && (post.mediaType === null || typeof post.mediaType === 'string')
+    && (post.draftId === undefined || post.draftId === null || typeof post.draftId === 'string')
     && (post.status === 'scheduled' || post.status === 'due')
     && typeof post.createdAt === 'number';
 }
@@ -254,6 +256,7 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
   const scheduledAt = Number(request.scheduledAt);
   const caption = (request.caption ?? '').trim().slice(0, 2200);
   if (!type || !['post', 'reel', 'story'].includes(type)) throw new Error('Choose a valid post format.');
+  if (request.draftId !== undefined && request.draftId !== null && typeof request.draftId !== 'string') throw new Error('Choose a valid saved draft.');
   if (!Number.isFinite(scheduledAt) || scheduledAt <= Date.now()) throw new Error('Choose a future date and time.');
   if (!caption && !request.mediaName) throw new Error('Add media or a caption before scheduling.');
 
@@ -266,6 +269,7 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
     scheduledAt,
     mediaName: request.mediaName?.slice(0, 240) ?? null,
     mediaType: request.mediaType?.slice(0, 120) ?? null,
+    draftId: request.draftId?.trim().slice(0, 120) || null,
     status: 'scheduled',
     createdAt: Date.now(),
   };

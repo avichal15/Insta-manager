@@ -246,10 +246,14 @@ div[data-reel-id]:hover .im-media-bar,
 .im-dock-media small { margin-top: 2px !important; color: #a8a8a8 !important; font-size: 10px !important; }
 .im-dock-media input { width: 100px !important; color: #d8d8d8 !important; font-size: 10px !important; }
 .im-media-list { max-height: 126px !important; margin-top: 8px !important; overflow: auto !important; border: 1px solid #333 !important; border-radius: 8px !important; }
-.im-media-list > div { display: flex !important; gap: 7px !important; padding: 7px 9px !important; border-bottom: 1px solid #303030 !important; }
+.im-media-list > div { display: flex !important; gap: 7px !important; align-items: center !important; padding: 7px 9px !important; border-bottom: 1px solid #303030 !important; }
 .im-media-list > div:last-child { border-bottom: 0 !important; }
 .im-media-list span { flex: 0 0 auto !important; color: #a8a8a8 !important; font-size: 10px !important; }
-.im-media-list em { overflow: hidden !important; color: #e8e8e8 !important; font-style: normal !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.im-media-list em { flex: 1 1 auto !important; min-width: 0 !important; overflow: hidden !important; color: #e8e8e8 !important; font-style: normal !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.im-media-list .im-media-actions { display: flex !important; gap: 3px !important; }
+.im-media-actions button { width: 24px !important; height: 24px !important; padding: 0 !important; color: #d8d8d8 !important; background: #363636 !important; border: 0 !important; border-radius: 5px !important; cursor: pointer !important; }
+.im-media-actions button:last-child { color: #ffb4ab !important; }
+.im-media-actions button:disabled { cursor: not-allowed !important; opacity: .35 !important; }
 .im-dock-help, .im-dock-note, .im-dock-empty { margin: 0 0 13px !important; color: #a8a8a8 !important; font-size: 12px !important; }
 .im-dock-note { padding: 9px !important; color: #d8d8d8 !important; background: #252525 !important; border-radius: 7px !important; }
 .im-date-time { display: flex !important; gap: 8px !important; }

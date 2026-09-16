@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
+import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 
 const pageBundle = await readFile(new URL('../dist/page.js', import.meta.url), 'utf8');
+const draftBundle = await readFile(new URL('../dist/drafts.js', import.meta.url), 'utf8');
 const contentBundle = await readFile(new URL('../dist/content.js', import.meta.url), 'utf8');
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -40,15 +42,18 @@ function settings(window, ghostModeEnabled, adBlockEnabled) {
   });
 }
 
-function installContent(window) {
+let fixtureAccount = 0;
+function installContent(window, accountId = `fixture-user-${++fixtureAccount}`) {
   const storageListeners = [];
   const runtimeListeners = [];
   const defaults = {
+    GET_AUTH: { isLoggedIn: true, userId: accountId, username: 'fixture', avatarUrl: null, csrfToken: null, appId: null, dtsgToken: null },
     GET_SETTINGS: { adBlockEnabled: true, ghostModeEnabled: false, ghostModeAuto: false, theme: 'dark' },
     GET_GHOST: { enabled: false, dmBlocked: 0, storyBlocked: 0 },
     GET_SCHEDULED_POSTS: [],
     GET_AUDIENCE_SNAPSHOT: null,
   };
+  Object.assign(window, { indexedDB, IDBKeyRange });
   window.chrome = {
     runtime: {
       getManifest() { return { version: '1.0.2' }; },
@@ -61,6 +66,7 @@ function installContent(window) {
   window.URL.createObjectURL = () => 'blob:https://www.instagram.com/fixture-' + (++objectUrlCount);
   window.URL.revokeObjectURL = () => {};
   Object.defineProperty(window.document, 'readyState', { configurable: true, get: () => 'complete' });
+  window.eval(draftBundle);
   window.eval(contentBundle);
   return { storageListeners, runtimeListeners };
 }
@@ -482,7 +488,7 @@ test('creator opens as a compact in-page dock without a fullscreen backdrop or d
   assert.equal(dock.textContent.includes('Reload updated extension'), false);
 });
 
-test('creator accepts up to twenty files and labels scheduled media as reselect-required', async (t) => {
+test('creator accepts up to twenty files and labels selected media', async (t) => {
   const window = fixture(t);
   installContent(window);
   window.document.dispatchEvent(new window.CustomEvent('im-open-creator'));
@@ -493,4 +499,30 @@ test('creator accepts up to twenty files and labels scheduled media as reselect-
   input.dispatchEvent(new window.Event('change', { bubbles: true }));
   assert.equal(window.document.querySelectorAll('[data-media-index]').length, 20);
   assert.match(window.document.getElementById('im-creator-dock').textContent, /20 selected/);
+});
+
+test('creator restores caption, format, and ordered media after its content context reloads', async (t) => {
+  const first = fixture(t);
+  installContent(first, 'reload-fixture');
+  first.document.dispatchEvent(new first.CustomEvent('im-open-creator'));
+  await tick();
+  first.document.querySelector('[data-format="post"]').click();
+  const caption = first.document.getElementById('im-caption-input');
+  caption.value = 'Durable carousel';
+  caption.dispatchEvent(new first.Event('input', { bubbles: true }));
+  const input = first.document.getElementById('im-file-input');
+  Object.defineProperty(input, 'files', { value: [
+    new first.File(['one'], 'first.png', { type: 'image/png' }),
+    new first.File(['two'], 'second.png', { type: 'image/png' }),
+  ] });
+  input.dispatchEvent(new first.Event('change', { bubbles: true }));
+  await new Promise((resolve) => first.setTimeout(resolve, 350));
+
+  const reloaded = fixture(t);
+  installContent(reloaded, 'reload-fixture');
+  reloaded.document.dispatchEvent(new reloaded.CustomEvent('im-open-creator'));
+  await new Promise((resolve) => reloaded.setTimeout(resolve, 50));
+  assert.equal(reloaded.document.getElementById('im-caption-input').value, 'Durable carousel');
+  assert.equal(reloaded.document.querySelector('[data-format="post"]').classList.contains('is-active'), true);
+  assert.deepEqual([...reloaded.document.querySelectorAll('[data-media-index] em')].map((item) => item.textContent), ['first.png', 'second.png']);
 });

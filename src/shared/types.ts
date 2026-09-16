@@ -75,6 +75,7 @@ export interface ScheduledPost {
   scheduledAt: number;
   mediaName: string | null;
   mediaType: string | null;
+  draftId?: string | null;
   status: 'scheduled' | 'due';
   createdAt: number;
 }

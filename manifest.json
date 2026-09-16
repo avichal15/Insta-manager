@@ -31,7 +31,7 @@
     },
     {
       "matches": ["https://*.instagram.com/*"],
-      "js": ["content.js"],
+      "js": ["drafts.js", "content.js"],
       "run_at": "document_start",
       "all_frames": false
     }
