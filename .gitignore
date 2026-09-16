@@ -3,3 +3,5 @@ dist/
 work/
 .codex/config.toml
 inssist-source/
+Screen Recording*.mp4
+tools/
