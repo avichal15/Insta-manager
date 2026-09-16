@@ -44,12 +44,41 @@ const MessageType = {
 type IncomingMessage = { type?: string; data?: unknown };
 type DownloadRoute = { tabId: number; requestId: string; createdAt: number };
 type DownloadRouteState = { version: 1; routes: Record<string, DownloadRoute> };
+type DownloadState = { version: 1; accounts: Record<string, DownloadItem[]> };
+type AudienceState = { version: 1; accounts: Record<string, AudienceSnapshot> };
 type ScheduleState = { version: 1; posts: ScheduledPost[] };
 let creatingOffscreen: Promise<void> | undefined;
 let downloadMutation = Promise.resolve();
 let downloadRouteMutation = Promise.resolve();
 let scheduleMutation = Promise.resolve();
 const DOWNLOAD_ROUTE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function isDownloadItem(value: unknown): value is DownloadItem {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<DownloadItem>;
+  return typeof item.id === 'string' && typeof item.url === 'string' && typeof item.filename === 'string'
+    && typeof item.type === 'string' && ['pending', 'downloading', 'done', 'error'].includes(item.status ?? '')
+    && typeof item.createdAt === 'number' && (item.downloadId === undefined || Number.isInteger(item.downloadId));
+}
+
+async function getDownloadState(accountId: string): Promise<DownloadState> {
+  const stored = await AppStorage.get<unknown>(STORAGE_KEYS.DOWNLOADS);
+  if (stored && typeof stored === 'object' && (stored as Partial<DownloadState>).version === 1) {
+    const accounts = (stored as Partial<DownloadState>).accounts;
+    if (accounts && typeof accounts === 'object') return { version: 1, accounts: Object.fromEntries(Object.entries(accounts).map(([id, items]) => [id, Array.isArray(items) ? items.filter(isDownloadItem).slice(0, 50) : []])) };
+  }
+  return { version: 1, accounts: { [accountId]: Array.isArray(stored) ? stored.filter(isDownloadItem).slice(0, 50) : [] } };
+}
+
+async function getAudienceState(accountId: string): Promise<AudienceState> {
+  const stored = await AppStorage.get<unknown>(STORAGE_KEYS.AUDIENCE_SNAPSHOT);
+  if (stored && typeof stored === 'object' && (stored as Partial<AudienceState>).version === 1) {
+    const accounts = (stored as Partial<AudienceState>).accounts;
+    if (accounts && typeof accounts === 'object') return { version: 1, accounts: accounts as Record<string, AudienceSnapshot> };
+  }
+  const legacy = stored && typeof stored === 'object' && typeof (stored as Partial<AudienceSnapshot>).scannedAt === 'number' ? stored as AudienceSnapshot : undefined;
+  return { version: 1, accounts: legacy ? { [accountId]: legacy } : {} };
+}
 
 function mutateDownloads(operation: () => Promise<void>): Promise<void> {
   downloadMutation = downloadMutation.then(operation, operation);
@@ -301,20 +330,24 @@ async function restoreAlarms(): Promise<void> {
     })));
 }
 
-async function addDownload(item: DownloadItem): Promise<void> {
+async function addDownload(accountId: string, item: DownloadItem): Promise<void> {
   await mutateDownloads(async () => {
-    const history = (await AppStorage.get<DownloadItem[]>(STORAGE_KEYS.DOWNLOADS)) ?? [];
-    await AppStorage.set(STORAGE_KEYS.DOWNLOADS, [item, ...history].slice(0, 50));
+    const state = await getDownloadState(accountId);
+    state.accounts[accountId] = [item, ...(state.accounts[accountId] ?? [])].slice(0, 50);
+    await AppStorage.set(STORAGE_KEYS.DOWNLOADS, state);
   });
 }
 
 async function updateDownload(id: number, patch: Partial<DownloadItem>): Promise<void> {
   await mutateDownloads(async () => {
-    const history = (await AppStorage.get<DownloadItem[]>(STORAGE_KEYS.DOWNLOADS)) ?? [];
-    await AppStorage.set(
-      STORAGE_KEYS.DOWNLOADS,
-      history.map((item) => item.downloadId === id ? { ...item, ...patch } : item),
-    );
+    const accountId = await activeAccountId();
+    const state = await getDownloadState(accountId);
+    for (const [ownerId, history] of Object.entries(state.accounts)) {
+      if (!history.some((item) => item.downloadId === id)) continue;
+      state.accounts[ownerId] = history.map((item) => item.downloadId === id ? { ...item, ...patch } : item);
+      await AppStorage.set(STORAGE_KEYS.DOWNLOADS, state);
+      return;
+    }
   });
 }
 
@@ -397,12 +430,16 @@ async function loadFriendshipList(userId: string, direction: 'followers' | 'foll
 async function scanAudience(): Promise<AudienceSnapshot> {
   const auth = await getAuthState();
   if (!auth.userId) throw new Error('Could not identify the logged-in Instagram account.');
-  const previous = await AppStorage.get<AudienceSnapshot>(STORAGE_KEYS.AUDIENCE_SNAPSHOT);
+  const accountId = auth.userId;
+  const audienceState = await getAudienceState(accountId);
+  const previous = audienceState.accounts[accountId];
   const [profileResponse, followersResult, followingResult] = await Promise.all([
-    instagramRequest(`/api/v1/users/${auth.userId}/info/`),
-    loadFriendshipList(auth.userId, 'followers'),
-    loadFriendshipList(auth.userId, 'following'),
+    instagramRequest(`/api/v1/users/${accountId}/info/`),
+    loadFriendshipList(accountId, 'followers'),
+    loadFriendshipList(accountId, 'following'),
   ]);
+  const currentAuth = await getAuthState();
+  if (currentAuth.userId !== accountId) throw new Error('Instagram account changed during the audience scan. Run it again.');
   const profilePayload = await profileResponse.json() as { user?: InstagramListUser };
   const followerIds = new Set(followersResult.users.map((user) => user.id));
   const previousFollowerIds = new Set(previous?.followers.map((user) => user.id) ?? []);
@@ -421,7 +458,8 @@ async function scanAudience(): Promise<AudienceSnapshot> {
     gainedFollowers: followersResult.users.filter((user) => previous && !previousFollowerIds.has(user.id)),
     lostFollowers: previous?.followers.filter((user) => !followerIds.has(user.id)) ?? [],
   };
-  await AppStorage.set(STORAGE_KEYS.AUDIENCE_SNAPSHOT, snapshot);
+  audienceState.accounts[accountId] = snapshot;
+  await AppStorage.set(STORAGE_KEYS.AUDIENCE_SNAPSHOT, audienceState);
   return snapshot;
 }
 
@@ -441,7 +479,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       AppStorage.set(STORAGE_KEYS.GHOST, defaultGhost),
       AppStorage.set(STORAGE_KEYS.SETTINGS, defaultSettings),
       AppStorage.set<ScheduleState>(STORAGE_KEYS.SCHEDULED_POSTS, { version: 1, posts: [] }),
-      AppStorage.set<DownloadItem[]>(STORAGE_KEYS.DOWNLOADS, []),
+      AppStorage.set<DownloadState>(STORAGE_KEYS.DOWNLOADS, { version: 1, accounts: {} }),
+      AppStorage.set<AudienceState>(STORAGE_KEYS.AUDIENCE_SNAPSHOT, { version: 1, accounts: {} }),
     ]);
   }
   await restoreAlarms();
@@ -547,6 +586,7 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage & { target?: stri
             downloadUrl = result.url;
           }
           const filename = safeFilename(data.filename ?? `instagram-media-${Date.now()}`);
+          const accountId = await activeAccountId();
           chrome.downloads.download({ url: downloadUrl, filename, saveAs: false }, (downloadId) => {
             void (async () => {
               if (chrome.runtime.lastError || downloadId === undefined) {
@@ -554,7 +594,7 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage & { target?: stri
                 sendResponse({ success: false, error: chrome.runtime.lastError?.message ?? 'Download failed.' });
                 return;
               }
-              await addDownload({
+              await addDownload(accountId, {
                 id: crypto.randomUUID(),
                 url: data.url as string,
                 filename,
@@ -571,9 +611,11 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage & { target?: stri
           });
           return;
         }
-        case MessageType.GET_DOWNLOADS:
-          sendResponse((await AppStorage.get<DownloadItem[]>(STORAGE_KEYS.DOWNLOADS)) ?? []);
+        case MessageType.GET_DOWNLOADS: {
+          const accountId = await activeAccountId();
+          sendResponse((await getDownloadState(accountId)).accounts[accountId] ?? []);
           break;
+        }
         case MessageType.GET_SCHEDULED_POSTS:
           sendResponse(await getSchedules());
           break;
@@ -595,9 +637,11 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage & { target?: stri
           sendResponse({ success: true });
           break;
         }
-        case MessageType.GET_AUDIENCE_SNAPSHOT:
-          sendResponse(await AppStorage.get<AudienceSnapshot>(STORAGE_KEYS.AUDIENCE_SNAPSHOT));
+        case MessageType.GET_AUDIENCE_SNAPSHOT: {
+          const accountId = await activeAccountId();
+          sendResponse((await getAudienceState(accountId)).accounts[accountId] ?? null);
           break;
+        }
         case MessageType.SCAN_AUDIENCE:
           sendResponse({ success: true, snapshot: await scanAudience() });
           break;

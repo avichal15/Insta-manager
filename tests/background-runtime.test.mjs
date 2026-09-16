@@ -75,6 +75,38 @@ function worker(initial = {}, options = {}) {
   };
 }
 
+test('built worker keeps download history isolated by Instagram account', async () => {
+  const shared = {};
+  const first = worker(shared, { userId: '1001' });
+  assert.equal((await first.send({ type: 'DOWNLOAD_MEDIA', data: { url: 'https://cdninstagram.com/first.jpg', filename: 'first.jpg' } })).success, true);
+  Object.assign(shared, first.values);
+
+  const second = worker(shared, { userId: '2002' });
+  assert.equal(JSON.stringify(await second.send({ type: 'GET_DOWNLOADS' })), '[]');
+  assert.equal((await second.send({ type: 'DOWNLOAD_MEDIA', data: { url: 'https://cdninstagram.com/second.jpg', filename: 'second.jpg' } })).success, true);
+  Object.assign(shared, second.values);
+
+  const restored = worker(shared, { userId: '1001' });
+  assert.equal(JSON.stringify((await restored.send({ type: 'GET_DOWNLOADS' })).map((item) => item.filename)), '["first.jpg"]');
+});
+
+test('built worker keeps audience snapshots isolated by Instagram account', async () => {
+  const snapshot = {
+    scannedAt: 123,
+    followerCount: 1,
+    followingCount: 0,
+    scannedFollowers: 1,
+    scannedFollowing: 0,
+    limited: false,
+    followers: [], following: [], nonFollowers: [], suspiciousFollowers: [], gainedFollowers: [], lostFollowers: [],
+  };
+  const shared = { audienceSnapshot: { version: 1, accounts: { '1001': snapshot } } };
+  const first = worker(shared, { userId: '1001' });
+  assert.equal((await first.send({ type: 'GET_AUDIENCE_SNAPSHOT' })).scannedAt, 123);
+  const second = worker(shared, { userId: '2002' });
+  assert.equal(await second.send({ type: 'GET_AUDIENCE_SNAPSHOT' }), null);
+});
+
 test('built worker routes split-track media through offscreen, downloads the Blob, and releases it', async () => {
   const host = worker();
   const result = await host.send({ type: 'DOWNLOAD_MEDIA', data: { url: 'https://cdninstagram.com/video.mp4', audioUrl: 'https://cdninstagram.com/audio.mp4', filename: 'reel.mp4' } });
