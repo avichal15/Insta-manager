@@ -34,7 +34,17 @@ function worker(initial = {}, options = {}) {
       remove(key, callback) { delete values[key]; withStorageError(callback); return Promise.resolve(); },
     } },
     alarms: { onAlarm: event, async create() {} },
-    notifications: { onClicked: event }, cookies: { onChanged: event }, action: { onClicked: event },
+    notifications: { onClicked: event },
+    cookies: {
+      onChanged: event,
+      async get({ name }) {
+        if (name === 'sessionid') return { value: options.sessionId ?? 'fixture-session' };
+        if (name === 'ds_user_id') return { value: options.userId ?? '1001' };
+        if (name === 'csrftoken') return { value: 'fixture-csrf' };
+        return null;
+      },
+    },
+    action: { onClicked: event },
     tabs: {
       async query() { return []; },
       async get() { return { url: 'https://www.instagram.com/reels/' }; },
@@ -136,4 +146,20 @@ test('built worker reports chrome storage write failures to callers', async () =
   assert.equal(result.success, false);
   assert.match(result.error, /Storage quota exceeded/);
   assert.equal(host.values.settings, undefined);
+});
+
+test('built worker isolates schedules by the active Instagram account', async () => {
+  const shared = {};
+  const first = worker(shared, { userId: '1001' });
+  const scheduled = await first.send({
+    type: 'SCHEDULE_POST',
+    data: { type: 'post', caption: 'first account', scheduledAt: Date.now() + 60_000 },
+  });
+  assert.equal(scheduled.success, true);
+  Object.assign(shared, first.values);
+
+  const second = worker(shared, { userId: '2002' });
+  assert.equal(JSON.stringify(await second.send({ type: 'GET_SCHEDULED_POSTS' })), '[]');
+  const restored = worker(shared, { userId: '1001' });
+  assert.equal((await restored.send({ type: 'GET_SCHEDULED_POSTS' }))[0].caption, 'first account');
 });

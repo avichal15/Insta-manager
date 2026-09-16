@@ -69,6 +69,7 @@ export type PublishFormat = 'post' | 'reel' | 'story';
 
 export interface ScheduledPost {
   id: string;
+  accountId: string;
   type: PublishFormat;
   caption: string;
   scheduledAt: number;

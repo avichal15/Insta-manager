@@ -44,9 +44,11 @@ const MessageType = {
 type IncomingMessage = { type?: string; data?: unknown };
 type DownloadRoute = { tabId: number; requestId: string; createdAt: number };
 type DownloadRouteState = { version: 1; routes: Record<string, DownloadRoute> };
+type ScheduleState = { version: 1; posts: ScheduledPost[] };
 let creatingOffscreen: Promise<void> | undefined;
 let downloadMutation = Promise.resolve();
 let downloadRouteMutation = Promise.resolve();
+let scheduleMutation = Promise.resolve();
 const DOWNLOAD_ROUTE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function mutateDownloads(operation: () => Promise<void>): Promise<void> {
@@ -181,12 +183,70 @@ function safeFilename(value: string): string {
   return filename.slice(0, 180) || `instagram-media-${Date.now()}`;
 }
 
-async function getSchedules(): Promise<ScheduledPost[]> {
-  return (await AppStorage.get<ScheduledPost[]>(STORAGE_KEYS.SCHEDULED_POSTS)) ?? [];
+function isScheduledPost(value: unknown): value is ScheduledPost {
+  if (!value || typeof value !== 'object') return false;
+  const post = value as Partial<ScheduledPost>;
+  return typeof post.id === 'string'
+    && typeof post.accountId === 'string'
+    && ['post', 'reel', 'story'].includes(post.type ?? '')
+    && typeof post.caption === 'string'
+    && typeof post.scheduledAt === 'number'
+    && Number.isFinite(post.scheduledAt)
+    && (post.mediaName === null || typeof post.mediaName === 'string')
+    && (post.mediaType === null || typeof post.mediaType === 'string')
+    && (post.status === 'scheduled' || post.status === 'due')
+    && typeof post.createdAt === 'number';
 }
 
-async function saveSchedules(posts: ScheduledPost[]): Promise<void> {
-  await AppStorage.set(STORAGE_KEYS.SCHEDULED_POSTS, posts);
+async function activeAccountId(): Promise<string> {
+  const auth = await getAuthState();
+  if (!auth.isLoggedIn || !auth.userId) throw new Error('Log in to Instagram before managing scheduled reminders.');
+  return auth.userId;
+}
+
+async function getScheduleState(accountId: string): Promise<ScheduleState> {
+  const stored = await AppStorage.get<unknown>(STORAGE_KEYS.SCHEDULED_POSTS);
+  if (stored && typeof stored === 'object' && (stored as ScheduleState).version === 1 && Array.isArray((stored as ScheduleState).posts)) {
+    return { version: 1, posts: (stored as ScheduleState).posts.filter(isScheduledPost) };
+  }
+  if (Array.isArray(stored)) {
+    const posts = stored.filter((post): post is Omit<ScheduledPost, 'accountId'> => {
+      if (!post || typeof post !== 'object') return false;
+      const candidate = post as Partial<ScheduledPost>;
+      return typeof candidate.id === 'string' && ['post', 'reel', 'story'].includes(candidate.type ?? '')
+        && typeof candidate.caption === 'string' && typeof candidate.scheduledAt === 'number'
+        && (candidate.status === 'scheduled' || candidate.status === 'due') && typeof candidate.createdAt === 'number';
+    }).map((post) => ({ ...post, accountId }));
+    const migrated = { version: 1 as const, posts };
+    await AppStorage.set(STORAGE_KEYS.SCHEDULED_POSTS, migrated);
+    return migrated;
+  }
+  return { version: 1, posts: [] };
+}
+
+async function getSchedules(accountId?: string): Promise<ScheduledPost[]> {
+  const ownerId = accountId ?? await activeAccountId();
+  return (await getScheduleState(ownerId)).posts.filter((post) => post.accountId === ownerId);
+}
+
+async function mutateSchedules<T>(accountId: string, operation: (posts: ScheduledPost[]) => Promise<T> | T): Promise<T> {
+  const result = scheduleMutation.then(async () => {
+    const state = await getScheduleState(accountId);
+    const ownPosts = state.posts.filter((post) => post.accountId === accountId);
+    const resultValue = await operation(ownPosts);
+    state.posts = [...state.posts.filter((post) => post.accountId !== accountId), ...ownPosts];
+    await AppStorage.set(STORAGE_KEYS.SCHEDULED_POSTS, state);
+    return resultValue;
+  }, async () => {
+    const state = await getScheduleState(accountId);
+    const ownPosts = state.posts.filter((post) => post.accountId === accountId);
+    const resultValue = await operation(ownPosts);
+    state.posts = [...state.posts.filter((post) => post.accountId !== accountId), ...ownPosts];
+    await AppStorage.set(STORAGE_KEYS.SCHEDULED_POSTS, state);
+    return resultValue;
+  });
+  scheduleMutation = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
@@ -197,8 +257,10 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
   if (!Number.isFinite(scheduledAt) || scheduledAt <= Date.now()) throw new Error('Choose a future date and time.');
   if (!caption && !request.mediaName) throw new Error('Add media or a caption before scheduling.');
 
+  const accountId = await activeAccountId();
   const post: ScheduledPost = {
     id: crypto.randomUUID(),
+    accountId,
     type,
     caption,
     scheduledAt,
@@ -207,8 +269,10 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
     status: 'scheduled',
     createdAt: Date.now(),
   };
-  const posts = await getSchedules();
-  await saveSchedules([...posts, post].sort((a, b) => a.scheduledAt - b.scheduledAt));
+  await mutateSchedules(accountId, (posts) => {
+    posts.push(post);
+    posts.sort((a, b) => a.scheduledAt - b.scheduledAt);
+  });
   await chrome.alarms.create(`${SCHEDULE_ALARM_PREFIX}${post.id}`, { when: post.scheduledAt });
   return post;
 }
@@ -506,7 +570,14 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage & { target?: stri
         case MessageType.DELETE_SCHEDULED_POST: {
           const id = (message.data as { id?: string } | undefined)?.id;
           if (!id) throw new Error('A scheduled post id is required.');
-          await saveSchedules((await getSchedules()).filter((post) => post.id !== id));
+          const accountId = await activeAccountId();
+          const removed = await mutateSchedules(accountId, (posts) => {
+            const index = posts.findIndex((post) => post.id === id);
+            if (index < 0) return false;
+            posts.splice(index, 1);
+            return true;
+          });
+          if (!removed) throw new Error('Scheduled reminder not found for this account.');
           await chrome.alarms.clear(`${SCHEDULE_ALARM_PREFIX}${id}`);
           sendResponse({ success: true });
           break;
@@ -592,11 +663,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (!alarm.name.startsWith(SCHEDULE_ALARM_PREFIX)) return;
   const id = alarm.name.slice(SCHEDULE_ALARM_PREFIX.length);
   void (async () => {
-    const posts = await getSchedules();
-    const post = posts.find((item) => item.id === id);
+    const accountId = await activeAccountId();
+    const post = await mutateSchedules(accountId, (posts) => {
+      const match = posts.find((item) => item.id === id);
+      if (match) match.status = 'due';
+      return match;
+    });
     if (!post) return;
-    post.status = 'due';
-    await saveSchedules(posts);
     await chrome.notifications.create(alarm.name, {
       type: 'basic',
       iconUrl: 'icons/icon-128.png',
@@ -606,7 +679,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         : 'Your scheduled draft is due. Open Instagram to review and publish it.',
       priority: 2,
     });
-  })();
+  })().catch((error) => console.error('[InstaManager] Scheduled reminder failed:', error));
 });
 
 chrome.notifications.onClicked.addListener((notificationId) => {
