@@ -24,26 +24,40 @@ const defaultSettingsState: SettingsState = {
 };
 
 export class AppStorage {
+  private static callbackError(): Error | null {
+    const message = chrome.runtime.lastError?.message;
+    return message ? new Error(message) : null;
+  }
+
   static async get<T>(key: string): Promise<T | null> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       chrome.storage.local.get(key, (result) => {
+        const error = this.callbackError();
+        if (error) {
+          reject(error);
+          return;
+        }
         resolve(result[key] !== undefined ? result[key] : null);
       });
     });
   }
 
   static async set<T>(key: string, value: T): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       chrome.storage.local.set({ [key]: value }, () => {
-        resolve();
+        const error = this.callbackError();
+        if (error) reject(error);
+        else resolve();
       });
     });
   }
 
   static async remove(key: string): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       chrome.storage.local.remove(key, () => {
-        resolve();
+        const error = this.callbackError();
+        if (error) reject(error);
+        else resolve();
       });
     });
   }

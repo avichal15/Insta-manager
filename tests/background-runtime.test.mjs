@@ -6,25 +6,32 @@ import test from 'node:test';
 const source = await readFile(new URL('../dist/background.js', import.meta.url), 'utf8');
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-function worker(initial = {}) {
+function worker(initial = {}, options = {}) {
   const values = { ...initial };
   let listener;
   let downloadListener;
   let offscreenOpen = false;
+  let runtimeLastError;
   const calls = { created: [], downloads: [], messages: [], reloadTabs: [], reloads: 0, timers: [] };
   const event = { addListener() {} };
+  const withStorageError = (callback, value, message) => {
+    runtimeLastError = message ? { message } : undefined;
+    callback?.(value);
+    runtimeLastError = undefined;
+  };
   const chrome = {
     runtime: {
       id: 'fixture', getURL: (path) => 'chrome-extension://fixture/' + path,
+      get lastError() { return runtimeLastError; },
       onInstalled: event, OnInstalledReason: { INSTALL: 'install' },
       onMessage: { addListener(fn) { listener = fn; } },
       reload() { calls.reloads++; },
       async sendMessage(message) { calls.messages.push(message); return { success: true, url: 'blob:chrome-extension://fixture/media' }; },
     },
     storage: { local: {
-      get(key, callback) { const result = { [key]: values[key] }; if (callback) queueMicrotask(() => callback(result)); return Promise.resolve(result); },
-      set(patch, callback) { Object.assign(values, patch); callback?.(); return Promise.resolve(); },
-      remove(key, callback) { delete values[key]; callback?.(); return Promise.resolve(); },
+      get(key, callback) { const result = { [key]: values[key] }; if (callback) queueMicrotask(() => withStorageError(callback, result)); return Promise.resolve(result); },
+      set(patch, callback) { if (!options.storageSetError) Object.assign(values, patch); withStorageError(callback, undefined, options.storageSetError); return Promise.resolve(); },
+      remove(key, callback) { delete values[key]; withStorageError(callback); return Promise.resolve(); },
     } },
     alarms: { onAlarm: event, async create() {} },
     notifications: { onClicked: event }, cookies: { onChanged: event }, action: { onClicked: event },
@@ -101,4 +108,12 @@ test('built worker does not replay expired reload requests', async () => {
   await tick();
   assert.equal(host.calls.reloadTabs.length, 0);
   assert.equal(host.values.reloadRequest, undefined);
+});
+
+test('built worker reports chrome storage write failures to callers', async () => {
+  const host = worker({}, { storageSetError: 'Storage quota exceeded.' });
+  const result = await host.send({ type: 'UPDATE_SETTINGS', data: { adBlockEnabled: false } });
+  assert.equal(result.success, false);
+  assert.match(result.error, /Storage quota exceeded/);
+  assert.equal(host.values.settings, undefined);
 });
