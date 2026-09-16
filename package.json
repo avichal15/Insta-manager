@@ -1,0 +1,31 @@
+{
+  "name": "insta-manager",
+  "version": "1.0.2",
+  "description": "Instagram companion for media downloads, draft reminders, privacy controls, and ad filtering",
+  "private": true,
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "postbuild": "powershell -Command \"Copy-Item manifest.json dist/ -Force; Copy-Item THIRD_PARTY_NOTICES.txt dist/ -Force; New-Item -ItemType Directory -Force -Path dist/icons | Out-Null; Copy-Item icons/* dist/icons/ -Force; Copy-Item dist/src/popup/index.html dist/popup.html -Force\"",
+    "clean": "powershell -Command \"Remove-Item dist -Recurse -Force -ErrorAction SilentlyContinue\"",
+    "test": "npm run typecheck && npm run build && node scripts/validate-dist.mjs && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "mp4box": "2.4.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.260",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "jsdom": "26.1.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^6.4.3"
+  }
+}
