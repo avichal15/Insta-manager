@@ -61,13 +61,16 @@ function isDownloadItem(value: unknown): value is DownloadItem {
     && typeof item.createdAt === 'number' && (item.downloadId === undefined || Number.isInteger(item.downloadId));
 }
 
+function parseDownloadState(stored: unknown): DownloadState | null {
+  if (!stored || typeof stored !== 'object' || (stored as Partial<DownloadState>).version !== 1) return null;
+  const accounts = (stored as Partial<DownloadState>).accounts;
+  if (!accounts || typeof accounts !== 'object') return null;
+  return { version: 1, accounts: Object.fromEntries(Object.entries(accounts).map(([id, items]) => [id, Array.isArray(items) ? items.filter(isDownloadItem).slice(0, 50) : []])) };
+}
+
 async function getDownloadState(accountId: string): Promise<DownloadState> {
   const stored = await AppStorage.get<unknown>(STORAGE_KEYS.DOWNLOADS);
-  if (stored && typeof stored === 'object' && (stored as Partial<DownloadState>).version === 1) {
-    const accounts = (stored as Partial<DownloadState>).accounts;
-    if (accounts && typeof accounts === 'object') return { version: 1, accounts: Object.fromEntries(Object.entries(accounts).map(([id, items]) => [id, Array.isArray(items) ? items.filter(isDownloadItem).slice(0, 50) : []])) };
-  }
-  return { version: 1, accounts: { [accountId]: Array.isArray(stored) ? stored.filter(isDownloadItem).slice(0, 50) : [] } };
+  return parseDownloadState(stored) ?? { version: 1, accounts: { [accountId]: Array.isArray(stored) ? stored.filter(isDownloadItem).slice(0, 50) : [] } };
 }
 
 async function getAudienceState(accountId: string): Promise<AudienceState> {
@@ -340,8 +343,9 @@ async function addDownload(accountId: string, item: DownloadItem): Promise<void>
 
 async function updateDownload(id: number, patch: Partial<DownloadItem>): Promise<void> {
   await mutateDownloads(async () => {
-    const accountId = await activeAccountId();
-    const state = await getDownloadState(accountId);
+    const stored = await AppStorage.get<unknown>(STORAGE_KEYS.DOWNLOADS);
+    const state = parseDownloadState(stored);
+    if (!state) return;
     for (const [ownerId, history] of Object.entries(state.accounts)) {
       if (!history.some((item) => item.downloadId === id)) continue;
       state.accounts[ownerId] = history.map((item) => item.downloadId === id ? { ...item, ...patch } : item);

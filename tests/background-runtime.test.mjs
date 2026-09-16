@@ -45,9 +45,9 @@ function worker(initial = {}, options = {}) {
     cookies: {
       onChanged: { addListener(fn) { cookieListener = fn; } },
       async get({ name }) {
-        if (name === 'sessionid') return { value: options.sessionId ?? 'fixture-session' };
-        if (name === 'ds_user_id') return { value: options.userId ?? '1001' };
-        if (name === 'csrftoken') return { value: 'fixture-csrf' };
+        if (name === 'sessionid') return options.userId === null ? null : { value: options.sessionId ?? 'fixture-session' };
+        if (name === 'ds_user_id') return options.userId === null ? null : { value: options.userId ?? '1001' };
+        if (name === 'csrftoken') return options.userId === null ? null : { value: 'fixture-csrf' };
         return null;
       },
     },
@@ -88,6 +88,30 @@ test('built worker keeps download history isolated by Instagram account', async 
 
   const restored = worker(shared, { userId: '1001' });
   assert.equal(JSON.stringify((await restored.send({ type: 'GET_DOWNLOADS' })).map((item) => item.filename)), '["first.jpg"]');
+});
+
+test('built worker updates the initiating download after an Instagram account switch', async () => {
+  const host = worker({}, { userId: '1001' });
+  await host.send({ type: 'DOWNLOAD_MEDIA', data: { url: 'https://cdninstagram.com/first.jpg', filename: 'first.jpg' } });
+  host.switchAccount('2002');
+  host.downloadListener({ id: 1, state: { current: 'complete' } });
+  await tick();
+
+  host.switchAccount('1001');
+  const downloads = await host.send({ type: 'GET_DOWNLOADS' });
+  assert.equal(downloads[0].status, 'done');
+});
+
+test('built worker updates a pending download after Instagram logout', async () => {
+  const host = worker({}, { userId: '1001' });
+  await host.send({ type: 'DOWNLOAD_MEDIA', data: { url: 'https://cdninstagram.com/first.jpg', filename: 'first.jpg' } });
+  host.switchAccount(null);
+  host.downloadListener({ id: 1, state: { current: 'complete' } });
+  await tick();
+
+  host.switchAccount('1001');
+  const downloads = await host.send({ type: 'GET_DOWNLOADS' });
+  assert.equal(downloads[0].status, 'done');
 });
 
 test('built worker keeps audience snapshots isolated by Instagram account', async () => {
