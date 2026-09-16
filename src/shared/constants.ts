@@ -1,0 +1,33 @@
+export const IG_APP_ID = '936619743392459';
+export const IG_BASE_URL = 'https://www.instagram.com';
+export const IG_API_URL = 'https://i.instagram.com';
+
+export const STORAGE_KEYS = {
+  AUTH: 'auth',
+  SETTINGS: 'settings',
+  GHOST: 'ghost',
+  DOWNLOADS: 'downloads',
+  SCHEDULED_POSTS: 'scheduledPosts',
+  AUDIENCE_SNAPSHOT: 'audienceSnapshot',
+};
+
+export const SCHEDULE_ALARM_PREFIX = 'insta-manager-scheduled:';
+
+export const IG_DOC_IDS = {
+  PROFILE: '28036671149327607',
+  POSTS: '39535953862670189',
+  REELS: '28170354102656082',
+  STORIES: '37966272656351382',
+  LIKE: '27358573637160660',
+  FOLLOW: '22822165039207869',
+  UNFOLLOW: '22822165039207869',
+  POST_BY_SHORTCODE: '29326377470285825',
+  FOLLOWERS: '17851374694183129',
+  FOLLOWING: '17874545323001329',
+};
+
+export const RATE_LIMITS = {
+  REQUESTS_PER_MINUTE: 150,
+  REQUESTS_PER_HOUR: 1000,
+  REQUESTS_PER_DAY: 5000,
+};
