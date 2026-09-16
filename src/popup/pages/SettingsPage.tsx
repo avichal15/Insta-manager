@@ -44,7 +44,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ adBlocker, setAdBloc
               <span className="text-white font-bold text-xl">IM</span>
             </div>
             <div className="font-bold text-gray-200">InstaManager</div>
-            <div className="text-xs text-gray-500">Version 1.0.0</div>
+            <div className="text-xs text-gray-500">Version {chrome.runtime.getManifest().version}</div>
             <div className="text-xs text-gray-400 mt-2 text-center">
               Created with ❤️ by Avichal Goyal
             </div>
@@ -63,3 +63,4 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ adBlocker, setAdBloc
     </div>
   );
 };
+
