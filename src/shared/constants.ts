@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   SETTINGS: 'settings',
   GHOST: 'ghost',
   DOWNLOADS: 'downloads',
+  DOWNLOAD_ROUTES: 'downloadRoutes',
   SCHEDULED_POSTS: 'scheduledPosts',
   AUDIENCE_SNAPSHOT: 'audienceSnapshot',
 };

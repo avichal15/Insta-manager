@@ -85,6 +85,26 @@ test('built worker reports terminal download status to its initiating Instagram 
   }]));
 });
 
+test('built worker preserves terminal download routing across service-worker restart', async () => {
+  const started = worker();
+  const result = await started.send({
+    type: 'DOWNLOAD_MEDIA',
+    data: { url: 'https://cdninstagram.com/video.mp4', filename: 'reel.mp4', requestId: 'request-after-restart' },
+  });
+  assert.equal(result.success, true);
+  assert.equal(started.values.downloadRoutes?.version, 1);
+
+  const restarted = worker(started.values);
+  restarted.downloadListener({ id: 1, state: { current: 'complete' } });
+  await tick();
+  await tick();
+  assert.equal(JSON.stringify(restarted.calls.tabMessages), JSON.stringify([{
+    tabId: 7,
+    message: { type: 'DOWNLOAD_STATUS', data: { requestId: 'request-after-restart', downloadId: 1, status: 'done' } },
+  }]));
+  assert.equal(restarted.values.downloadRoutes.routes['1'], undefined);
+});
+
 test('built worker accepts self-reload only from the extension Instagram tab', async () => {
   const host = worker();
   await tick();

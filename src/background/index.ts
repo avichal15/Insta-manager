@@ -42,14 +42,59 @@ const MessageType = {
 } as const;
 
 type IncomingMessage = { type?: string; data?: unknown };
-type DownloadRoute = { tabId: number; requestId: string };
+type DownloadRoute = { tabId: number; requestId: string; createdAt: number };
+type DownloadRouteState = { version: 1; routes: Record<string, DownloadRoute> };
 let creatingOffscreen: Promise<void> | undefined;
 let downloadMutation = Promise.resolve();
-const downloadRoutes = new Map<number, DownloadRoute>();
+let downloadRouteMutation = Promise.resolve();
+const DOWNLOAD_ROUTE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function mutateDownloads(operation: () => Promise<void>): Promise<void> {
   downloadMutation = downloadMutation.then(operation, operation);
   return downloadMutation;
+}
+
+function mutateDownloadRoutes<T>(operation: () => Promise<T>): Promise<T> {
+  const result = downloadRouteMutation.then(operation, operation);
+  downloadRouteMutation = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+function isDownloadRoute(value: unknown): value is DownloadRoute {
+  if (!value || typeof value !== 'object') return false;
+  const route = value as Partial<DownloadRoute>;
+  return Number.isInteger(route.tabId)
+    && typeof route.requestId === 'string'
+    && route.requestId.length > 0
+    && route.requestId.length <= 160
+    && typeof route.createdAt === 'number'
+    && Date.now() - route.createdAt <= DOWNLOAD_ROUTE_MAX_AGE_MS;
+}
+
+async function getDownloadRouteState(): Promise<DownloadRouteState> {
+  const stored = await AppStorage.get<DownloadRouteState>(STORAGE_KEYS.DOWNLOAD_ROUTES);
+  const routes = stored?.version === 1 && stored.routes && typeof stored.routes === 'object'
+    ? Object.fromEntries(Object.entries(stored.routes).filter(([, route]) => isDownloadRoute(route)))
+    : {};
+  return { version: 1, routes };
+}
+
+async function saveDownloadRoute(downloadId: number, route: Omit<DownloadRoute, 'createdAt'>): Promise<void> {
+  await mutateDownloadRoutes(async () => {
+    const state = await getDownloadRouteState();
+    state.routes[String(downloadId)] = { ...route, createdAt: Date.now() };
+    await AppStorage.set(STORAGE_KEYS.DOWNLOAD_ROUTES, state);
+  });
+}
+
+async function takeDownloadRoute(downloadId: number): Promise<DownloadRoute | undefined> {
+  return mutateDownloadRoutes(async () => {
+    const state = await getDownloadRouteState();
+    const route = state.routes[String(downloadId)];
+    delete state.routes[String(downloadId)];
+    await AppStorage.set(STORAGE_KEYS.DOWNLOAD_ROUTES, state);
+    return route;
+  });
 }
 
 async function ensureOffscreen(): Promise<void> {
@@ -442,7 +487,7 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage & { target?: stri
                 downloadId,
               });
               if (_sender.tab?.id !== undefined && typeof data.requestId === 'string') {
-                downloadRoutes.set(downloadId, { tabId: _sender.tab.id, requestId: data.requestId });
+                await saveDownloadRoute(downloadId, { tabId: _sender.tab.id, requestId: data.requestId });
               }
               sendResponse({ success: true, downloadId });
             })();
@@ -530,8 +575,7 @@ chrome.downloads.onChanged.addListener((delta) => {
     : delta.state?.current === 'complete' ? 'done' : 'downloading';
   void updateDownload(delta.id, { status, error: delta.error?.current }).then(async () => {
     if (!isTerminal) return;
-    const route = downloadRoutes.get(delta.id);
-    downloadRoutes.delete(delta.id);
+    const route = await takeDownloadRoute(delta.id);
     if (!route) return;
     try {
       await chrome.tabs.sendMessage(route.tabId, {
