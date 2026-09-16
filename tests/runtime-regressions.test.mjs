@@ -218,9 +218,9 @@ test('story creates one action bar and targets the largest visible story media, 
     '<AdaptationSet contentType="audio"><Representation bandwidth="128000"><BaseURL>https://cdninstagram.com/story-audio.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>' } };
   const preview = window.document.createElement('img');
   preview.src = 'https://cdninstagram.com/preview.jpg';
-  avatar.getBoundingClientRect = () => ({ x: 0, y: 0, width: 56, height: 56 });
-  video.getBoundingClientRect = () => ({ x: 100, y: 20, width: 580, height: 1030 });
-  preview.getBoundingClientRect = () => ({ x: 700, y: 200, width: 230, height: 410 });
+  avatar.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 56, bottom: 56, width: 56, height: 56 });
+  video.getBoundingClientRect = () => ({ x: 100, y: 20, left: 100, top: 20, right: 680, bottom: 1050, width: 580, height: 1030 });
+  preview.getBoundingClientRect = () => ({ x: 700, y: 200, left: 700, top: 200, right: 930, bottom: 610, width: 230, height: 410 });
   inner.append(video, preview);
   outer.append(avatar, inner);
   window.document.body.append(outer);
@@ -254,7 +254,7 @@ test('story controls attach immediately after SPA navigation even when timers ar
   image.src = 'https://cdninstagram.com/story.jpg';
   Object.defineProperty(image, 'naturalWidth', { value: 1080 });
   Object.defineProperty(image, 'naturalHeight', { value: 1920 });
-  image.getBoundingClientRect = () => ({ x: 100, y: 20, width: 580, height: 1030 });
+  image.getBoundingClientRect = () => ({ x: 100, y: 20, left: 100, top: 20, right: 680, bottom: 1050, width: 580, height: 1030 });
   section.append(image);
   window.history.pushState({}, '', '/stories/fixture/');
   window.document.body.append(section);
@@ -271,7 +271,7 @@ test('story controls attach when Instagram changes the route after inserting med
   image.src = 'https://cdninstagram.com/late-route-story.jpg';
   Object.defineProperty(image, 'naturalWidth', { value: 1080 });
   Object.defineProperty(image, 'naturalHeight', { value: 1920 });
-  image.getBoundingClientRect = () => ({ x: 100, y: 20, width: 580, height: 1030 });
+  image.getBoundingClientRect = () => ({ x: 100, y: 20, left: 100, top: 20, right: 680, bottom: 1050, width: 580, height: 1030 });
   section.append(image);
   window.document.body.append(section);
   await tick();
@@ -398,6 +398,22 @@ test('feed download control follows the active carousel media after the article 
   window.document.querySelector('button[aria-label="Download post"]').click();
   await tick();
   assert.equal(messages.find((message) => message.type === 'DOWNLOAD_MEDIA').data.url, 'https://cdninstagram.com/slide-two.jpg');
+});
+
+test('feed control is removed when a virtualized article no longer has media', async (t) => {
+  const window = fixture(t, '/');
+  const article = window.document.createElement('article');
+  const image = window.document.createElement('img');
+  image.src = 'https://cdninstagram.com/slide.jpg';
+  Object.defineProperty(image, 'naturalWidth', { value: 1080 });
+  Object.defineProperty(image, 'clientWidth', { value: 400 });
+  article.append(image);
+  window.document.querySelector('main').append(article);
+  installContent(window);
+  assert.equal(window.document.querySelectorAll('button[aria-label="Download post"]').length, 1);
+  image.remove();
+  await new Promise((resolve) => window.setTimeout(resolve, 250));
+  assert.equal(window.document.querySelectorAll('button[aria-label="Download post"]').length, 0);
 });
 
 test('download control remains pending until its terminal completion message arrives', async (t) => {

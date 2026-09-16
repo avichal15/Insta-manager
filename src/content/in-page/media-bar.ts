@@ -401,10 +401,13 @@ export function initMediaBar() {
       if (existing) {
         const activeMedia = existing.getActiveMedia();
         const host = activeMedia && mediaHost(activeMedia);
-        if (host) {
-          prepareHost(host);
-          if (existing.bar.parentElement !== host) host.appendChild(existing.bar);
+        if (!host) {
+          existing.bar.remove();
+          feedControls.delete(article);
+          return;
         }
+        prepareHost(host);
+        if (existing.bar.parentElement !== host) host.appendChild(existing.bar);
         return;
       }
 
@@ -439,13 +442,12 @@ export function initMediaBar() {
         .map((media) => {
           const rect = media.getBoundingClientRect();
           const area = rect.width * rect.height;
+          const intersectsViewport = rect.right > 0 && rect.bottom > 0 && rect.left < window.innerWidth && rect.top < window.innerHeight;
           const hidden = Boolean(media.closest('[aria-hidden="true"]'));
           const video = media instanceof HTMLVideoElement;
           const naturalArea = media instanceof HTMLImageElement ? media.naturalWidth * media.naturalHeight : 0;
-          const score = hidden ? -1
-            : area >= 40_000 ? area * 1_000 + Number(video)
-              : video && media.currentTime > 0 ? 1_000_000_000 + media.currentTime
-                : naturalArea;
+          const score = hidden || !intersectsViewport || area < 40_000 ? -1
+            : area * 1_000 + Number(video) + (video ? media.currentTime : 0) + naturalArea / 1_000_000_000;
           return { media, score };
         })
         .filter(({ score }) => score > 0)
