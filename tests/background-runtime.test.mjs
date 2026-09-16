@@ -11,6 +11,7 @@ function worker(initial = {}, options = {}) {
   let listener;
   let downloadListener;
   let alarmListener;
+  let cookieListener;
   let offscreenOpen = false;
   let runtimeLastError;
   const calls = { alarmsCreated: [], alarmsCleared: [], created: [], downloads: [], messages: [], reloadTabs: [], reloads: 0, timers: [] };
@@ -42,7 +43,7 @@ function worker(initial = {}, options = {}) {
     },
     notifications: { onClicked: event },
     cookies: {
-      onChanged: event,
+      onChanged: { addListener(fn) { cookieListener = fn; } },
       async get({ name }) {
         if (name === 'sessionid') return { value: options.sessionId ?? 'fixture-session' };
         if (name === 'ds_user_id') return { value: options.userId ?? '1001' };
@@ -66,7 +67,8 @@ function worker(initial = {}, options = {}) {
   };
   vm.runInNewContext(source, { chrome, URL, Headers, crypto, console, setTimeout(fn) { calls.timers.push(fn); } });
   return {
-    calls, values, downloadListener, alarmListener,
+    calls, values, downloadListener, alarmListener, cookieListener,
+    switchAccount(userId) { options.userId = userId; },
     send(message, sender = { id: 'fixture', tab: { id: 7 }, url: 'https://www.instagram.com/reels/' }) {
       return new Promise((resolve) => listener(message, sender, resolve));
     },
@@ -195,4 +197,22 @@ test('built worker reconciles schedule alarms for only the active account', asyn
     'insta-manager-scheduled:foreign',
     'insta-manager-scheduled:orphan',
   ]);
+});
+
+test('built worker reconciles alarms immediately after an Instagram account switch', async () => {
+  const future = Date.now() + 60_000;
+  const host = worker({ scheduledPosts: {
+    version: 1,
+    posts: [
+      { id: 'first', accountId: '1001', type: 'post', caption: 'first', scheduledAt: future, mediaName: null, mediaType: null, status: 'scheduled', createdAt: Date.now() },
+      { id: 'second', accountId: '2002', type: 'post', caption: 'second', scheduledAt: future, mediaName: null, mediaType: null, status: 'scheduled', createdAt: Date.now() },
+    ],
+  } }, { userId: '1001', alarms: [{ name: 'insta-manager-scheduled:first' }] });
+  await tick();
+  host.switchAccount('2002');
+  host.cookieListener({ cookie: { domain: '.instagram.com', name: 'sessionid', value: 'new-session' }, removed: false });
+  await tick();
+  await tick();
+  assert.ok(host.calls.alarmsCleared.includes('insta-manager-scheduled:first'));
+  assert.ok(host.calls.alarmsCreated.some(({ name }) => name === 'insta-manager-scheduled:second'));
 });

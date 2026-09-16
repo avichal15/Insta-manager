@@ -279,8 +279,8 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
 
 async function restoreAlarms(): Promise<void> {
   const now = Date.now();
-  const accountId = await activeAccountId();
-  const posts = await getSchedules(accountId);
+  const auth = await getAuthState();
+  const posts = auth.isLoggedIn && auth.userId ? await getSchedules(auth.userId) : [];
   const desired = new Map(posts
     .filter((post) => post.status === 'scheduled')
     .map((post) => [`${SCHEDULE_ALARM_PREFIX}${post.id}`, post]));
@@ -707,6 +707,7 @@ chrome.notifications.onClicked.addListener((notificationId) => {
 chrome.cookies.onChanged.addListener(({ cookie, removed }) => {
   if ((cookie.domain === '.instagram.com' || cookie.domain === 'www.instagram.com') && cookie.name === 'sessionid') {
     void broadcast({ type: MessageType.AUTH_STATUS_CHANGED, data: { isLoggedIn: !removed && Boolean(cookie.value) } });
+    void restoreAlarms().catch((error) => console.error('[InstaManager] Alarm reconciliation failed:', error));
   }
 });
 
