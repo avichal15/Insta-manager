@@ -400,6 +400,36 @@ test('feed download control follows the active carousel media after the article 
   assert.equal(messages.find((message) => message.type === 'DOWNLOAD_MEDIA').data.url, 'https://cdninstagram.com/slide-two.jpg');
 });
 
+test('feed download targets the centered carousel slide when adjacent slides remain rendered', async (t) => {
+  const window = fixture(t, '/');
+  Object.defineProperties(window, { innerWidth: { value: 1000 }, innerHeight: { value: 800 } });
+  const article = window.document.createElement('article');
+  article.getBoundingClientRect = () => ({ x: 100, y: 100, left: 100, top: 100, right: 900, bottom: 700, width: 800, height: 600 });
+  const previous = window.document.createElement('img');
+  const active = window.document.createElement('img');
+  const next = window.document.createElement('img');
+  for (const [image, name, left] of [[previous, 'previous', -250], [active, 'active', 200], [next, 'next', 850]]) {
+    image.src = `https://cdninstagram.com/${name}.jpg`;
+    Object.defineProperty(image, 'naturalWidth', { value: 1080 });
+    Object.defineProperty(image, 'clientWidth', { value: 600 });
+    image.getBoundingClientRect = () => ({ x: left, y: 100, left, top: 100, right: left + 600, bottom: 700, width: 600, height: 600 });
+    article.append(image);
+  }
+  window.document.querySelector('main').append(article);
+  installContent(window);
+  window.postMessage = (message) => {
+    if (message.source === 'insta-manager-resolve-request') {
+      const target = window.document.querySelector(`[data-im-target="${message.targetVal}"]`);
+      bridge(window, { source: 'insta-manager-resolve-response', requestId: message.requestId, url: target.src });
+    }
+  };
+  const messages = [];
+  window.chrome.runtime.sendMessage = (message, callback) => { messages.push(message); callback?.({ success: true, downloadId: 8 }); };
+  window.document.querySelector('button[aria-label="Download post"]').click();
+  await tick();
+  assert.equal(messages.find((message) => message.type === 'DOWNLOAD_MEDIA').data.url, 'https://cdninstagram.com/active.jpg');
+});
+
 test('feed control is removed when a virtualized article no longer has media', async (t) => {
   const window = fixture(t, '/');
   const article = window.document.createElement('article');

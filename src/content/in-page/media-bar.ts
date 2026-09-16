@@ -388,12 +388,31 @@ export function initMediaBar() {
         ...Array.from(article.querySelectorAll<HTMLVideoElement>('video')),
         ...Array.from(article.querySelectorAll<HTMLImageElement>('img[srcset], img[src*="cdninstagram"], img[src*="fbcdn"]')).filter(isUsableImage),
       ].filter((candidate) => !candidate.closest('[aria-hidden="true"]'));
-      return candidates
-        .map((media) => ({ media, rect: media.getBoundingClientRect() }))
-        .filter(({ rect }) => rect.width > 0 && rect.height > 0)
-        .sort((left, right) => right.rect.width * right.rect.height - left.rect.width * left.rect.height)[0]?.media
-        ?? candidates[0]
-        ?? null;
+      const articleRect = article.getBoundingClientRect();
+      const viewport = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+      const articleHasArea = articleRect.width > 0 && articleRect.height > 0;
+      const articleCenterX = articleHasArea ? (articleRect.left + articleRect.right) / 2 : window.innerWidth / 2;
+      const articleCenterY = articleHasArea ? (articleRect.top + articleRect.bottom) / 2 : window.innerHeight / 2;
+      const scored = candidates.map((media) => {
+        const rect = media.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        const clip = articleHasArea ? {
+          left: Math.max(viewport.left, articleRect.left),
+          top: Math.max(viewport.top, articleRect.top),
+          right: Math.min(viewport.right, articleRect.right),
+          bottom: Math.min(viewport.bottom, articleRect.bottom),
+        } : viewport;
+        const visibleWidth = Math.max(0, Math.min(rect.right, clip.right) - Math.max(rect.left, clip.left));
+        const visibleHeight = Math.max(0, Math.min(rect.bottom, clip.bottom) - Math.max(rect.top, clip.top));
+        const visibleRatio = area > 0 ? (visibleWidth * visibleHeight) / area : 0;
+        const centerDistance = Math.hypot(
+          (rect.left + rect.right) / 2 - articleCenterX,
+          (rect.top + rect.bottom) / 2 - articleCenterY,
+        );
+        return { media, area, visibleRatio, centerDistance };
+      }).filter(({ area, visibleRatio }) => area > 0 && visibleRatio > 0)
+        .sort((left, right) => right.visibleRatio - left.visibleRatio || left.centerDistance - right.centerDistance || right.area - left.area);
+      return scored[0]?.media ?? candidates[0] ?? null;
     };
 
     articles.forEach((article) => {
