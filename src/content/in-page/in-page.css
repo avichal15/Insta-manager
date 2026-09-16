@@ -1,0 +1,273 @@
+/* InstaManager In-Page Overlay Styles - Zero Layout Side Effects */
+
+/* Floating Media Action Bar over Reels, Feed Posts, and Stories */
+.im-media-bar {
+  position: absolute !important;
+  top: 14px !important;
+  right: 14px !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  pointer-events: auto !important;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* For Reels view (dedicated tab or modal): keep visible or prominent */
+.im-media-bar-reel {
+  top: 18px !important;
+  right: 18px !important;
+  opacity: 0.9 !important;
+  transform: translateY(0) !important;
+}
+
+.im-media-bar-story {
+  top: 60px !important;
+  opacity: 0.9 !important;
+  transform: translateY(0) !important;
+}
+
+/* Make action bar visible on hover over feed post or reel */
+article:hover .im-media-bar,
+div[role="dialog"]:hover .im-media-bar,
+.PolarisClipsTabDesktopClip:hover .im-media-bar,
+.PolarisClipsDesktopVideoPlayer:hover .im-media-bar,
+.PolarisStoriesV3ReelPlayerContainer:hover .im-media-bar,
+div[data-reel-id]:hover .im-media-bar,
+.im-media-bar:hover {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+/* Circular Action Button */
+.im-btn {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #111827 !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.15) !important;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease !important;
+  backdrop-filter: blur(8px) !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+}
+
+.im-btn:hover {
+  background: #ffffff !important;
+  transform: scale(1.1) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45) !important;
+}
+
+.im-btn:active {
+  transform: scale(0.94) !important;
+}
+
+.im-btn svg {
+  width: 20px !important;
+  height: 20px !important;
+  stroke-width: 2.2 !important;
+  pointer-events: none !important;
+}
+
+/* Tooltip on buttons */
+.im-btn-wrap {
+  position: relative !important;
+  display: inline-flex !important;
+  pointer-events: auto !important;
+}
+
+.im-tooltip {
+  position: absolute !important;
+  top: 100% !important;
+  left: 50% !important;
+  transform: translateX(-50%) translateY(6px) !important;
+  background: rgba(17, 24, 39, 0.96) !important;
+  color: #ffffff !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 5px 9px !important;
+  border-radius: 6px !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  transition: opacity 0.18s ease, transform 0.18s ease !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+  z-index: 100000 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+.im-btn-wrap:hover .im-tooltip {
+  opacity: 1 !important;
+  transform: translateX(-50%) translateY(8px) !important;
+}
+
+/* Button Loading Spinner */
+.im-spinner {
+  width: 18px !important;
+  height: 18px !important;
+  border: 2.5px solid rgba(0, 0, 0, 0.2) !important;
+  border-top-color: #0095f6 !important;
+  border-radius: 50% !important;
+  animation: im-spin 0.7s linear infinite !important;
+}
+
+@keyframes im-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Dedicated Reel Scrubber Bar (ONLY on full reels view) */
+.im-reel-scrubber {
+  position: absolute !important;
+  bottom: 8px !important;
+  left: 12px !important;
+  right: 12px !important;
+  height: 4px !important;
+  background: rgba(255, 255, 255, 0.35) !important;
+  border-radius: 9999px !important;
+  cursor: pointer !important;
+  z-index: 99998 !important;
+  transition: height 0.15s ease, background 0.15s ease !important;
+  pointer-events: auto !important;
+}
+
+.im-reel-scrubber:hover {
+  height: 7px !important;
+  background: rgba(255, 255, 255, 0.5) !important;
+}
+
+.im-reel-progress {
+  height: 100% !important;
+  width: var(--im-progress, 0%) !important;
+  background: linear-gradient(90deg, #f58529, #dd2a7b, #8134af) !important;
+  border-radius: 9999px !important;
+  position: relative !important;
+  pointer-events: none !important;
+}
+
+.im-reel-thumb {
+  position: absolute !important;
+  right: -5px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 11px !important;
+  height: 11px !important;
+  background: #ffffff !important;
+  border-radius: 50% !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
+  opacity: 0 !important;
+  transition: opacity 0.15s ease !important;
+  pointer-events: none !important;
+}
+
+.im-reel-scrubber:hover .im-reel-thumb {
+  opacity: 1 !important;
+}
+
+/* Shared media-control utilities */
+.im-toast {
+  position: fixed !important;
+  right: 28px !important;
+  bottom: 28px !important;
+  z-index: 10000000 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 12px 18px !important;
+  color: #fff !important;
+  background: #181a24 !important;
+  border: 1px solid rgba(255, 255, 255, .15) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .6) !important;
+  font: 600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  opacity: 0 !important;
+  transform: translateY(30px) !important;
+  transition: opacity .25s ease, transform .25s ease !important;
+}
+.im-toast.show { opacity: 1 !important; transform: translateY(0) !important; }
+.im-media-host-static { position: relative !important; }
+/* Compact in-page creator dock */
+.im-creator-dock {
+  position: fixed !important;
+  z-index: 1000000 !important;
+  top: 72px !important;
+  right: 18px !important;
+  width: min(360px, calc(100vw - 36px)) !important;
+  max-height: calc(100vh - 96px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  color: #f5f5f5 !important;
+  background: #181818 !important;
+  border: 1px solid #363636 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.34) !important;
+  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(-8px) !important;
+  transition: opacity 160ms ease, transform 160ms ease !important;
+}
+.im-creator-dock.im-creator-dock-open { opacity: 1 !important; pointer-events: auto !important; transform: translateY(0) !important; }
+.im-dock-header { min-height: 58px !important; padding: 0 14px 0 16px !important; display: flex !important; align-items: center !important; justify-content: space-between !important; border-bottom: 1px solid #303030 !important; }
+.im-dock-header strong { display: block !important; font-size: 15px !important; letter-spacing: -0.01em !important; }
+.im-dock-header span { display: block !important; margin-top: 2px !important; color: #a8a8a8 !important; font-size: 11px !important; }
+.im-dock-icon { width: 30px !important; height: 30px !important; color: #f5f5f5 !important; background: transparent !important; border: 0 !important; border-radius: 50% !important; font-size: 24px !important; line-height: 1 !important; cursor: pointer !important; }
+.im-dock-icon:hover { background: #2a2a2a !important; }
+.im-dock-nav { display: flex !important; padding: 5px 8px !important; gap: 2px !important; border-bottom: 1px solid #303030 !important; }
+.im-dock-nav button, .im-format-picker button { flex: 1 !important; min-height: 31px !important; color: #a8a8a8 !important; background: transparent !important; border: 0 !important; border-radius: 7px !important; font: inherit !important; font-weight: 600 !important; cursor: pointer !important; text-transform: capitalize !important; }
+.im-dock-nav button.is-active, .im-format-picker button.is-active { color: #fff !important; background: #363636 !important; }
+.im-dock-nav span { display: inline-grid !important; min-width: 16px !important; height: 16px !important; place-items: center !important; margin-left: 3px !important; color: #d8d8d8 !important; background: #4a4a4a !important; border-radius: 99px !important; font-size: 10px !important; }
+.im-dock-body { overflow-y: auto !important; padding: 14px 16px 16px !important; }
+.im-format-picker { display: flex !important; gap: 3px !important; padding: 3px !important; margin-bottom: 16px !important; background: #252525 !important; border-radius: 8px !important; }
+.im-dock-section { margin-bottom: 18px !important; }
+.im-dock-section h2 { margin: 0 0 5px !important; color: #fff !important; font-size: 14px !important; }
+.im-dock-label { display: flex !important; justify-content: space-between !important; margin-bottom: 7px !important; color: #f5f5f5 !important; font-weight: 600 !important; }
+.im-dock-label span { color: #a8a8a8 !important; font-weight: 400 !important; }
+.im-creator-dock textarea, .im-date-time input { box-sizing: border-box !important; width: 100% !important; color: #f5f5f5 !important; background: #262626 !important; border: 1px solid #3d3d3d !important; border-radius: 8px !important; font: inherit !important; }
+.im-creator-dock textarea { min-height: 104px !important; padding: 10px !important; resize: vertical !important; }
+.im-creator-dock textarea:focus, .im-date-time input:focus { outline: 2px solid #0095f6 !important; outline-offset: -1px !important; }
+.im-caption-actions { display: flex !important; gap: 12px !important; margin-top: 8px !important; }
+.im-caption-actions button { padding: 0 !important; color: #0095f6 !important; background: transparent !important; border: 0 !important; font: inherit !important; font-size: 11px !important; cursor: pointer !important; }
+.im-dock-media { display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 11px !important; color: #f5f5f5 !important; border: 1px dashed #5a5a5a !important; border-radius: 8px !important; cursor: pointer !important; }
+.im-dock-media:hover { border-color: #0095f6 !important; background: rgba(0,149,246,.08) !important; }
+.im-dock-media b, .im-dock-media small { display: block !important; }
+.im-dock-media small { margin-top: 2px !important; color: #a8a8a8 !important; font-size: 10px !important; }
+.im-dock-media input { width: 100px !important; color: #d8d8d8 !important; font-size: 10px !important; }
+.im-media-list { max-height: 126px !important; margin-top: 8px !important; overflow: auto !important; border: 1px solid #333 !important; border-radius: 8px !important; }
+.im-media-list > div { display: flex !important; gap: 7px !important; padding: 7px 9px !important; border-bottom: 1px solid #303030 !important; }
+.im-media-list > div:last-child { border-bottom: 0 !important; }
+.im-media-list span { flex: 0 0 auto !important; color: #a8a8a8 !important; font-size: 10px !important; }
+.im-media-list em { overflow: hidden !important; color: #e8e8e8 !important; font-style: normal !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.im-dock-help, .im-dock-note, .im-dock-empty { margin: 0 0 13px !important; color: #a8a8a8 !important; font-size: 12px !important; }
+.im-dock-note { padding: 9px !important; color: #d8d8d8 !important; background: #252525 !important; border-radius: 7px !important; }
+.im-date-time { display: flex !important; gap: 8px !important; }
+.im-date-time input { padding: 8px !important; color-scheme: dark !important; }
+.im-dock-footer { display: flex !important; gap: 8px !important; padding-top: 2px !important; }
+.im-dock-primary, .im-dock-secondary { min-height: 34px !important; padding: 0 12px !important; border-radius: 8px !important; font: inherit !important; font-weight: 700 !important; cursor: pointer !important; }
+.im-dock-primary { flex: 1 !important; color: #fff !important; background: #0095f6 !important; border: 1px solid #0095f6 !important; }
+.im-dock-primary:hover { background: #1877f2 !important; }
+.im-dock-secondary { color: #f5f5f5 !important; background: #262626 !important; border: 1px solid #3d3d3d !important; }
+.im-dock-secondary:disabled { cursor: not-allowed !important; opacity: .45 !important; }
+.im-dock-status { margin: 0 !important; padding: 9px !important; color: #d7ecff !important; background: rgba(0,149,246,.13) !important; border: 1px solid rgba(0,149,246,.35) !important; border-radius: 7px !important; font-size: 12px !important; }
+.im-dock-queue { display: grid !important; gap: 8px !important; }
+.im-dock-queue article { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto !important; gap: 7px !important; align-items: center !important; padding: 9px !important; background: #252525 !important; border: 1px solid #363636 !important; border-radius: 8px !important; }
+.im-dock-queue b, .im-dock-queue span { display: block !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.im-dock-queue b { color: #f5f5f5 !important; font-size: 11px !important; }
+.im-dock-queue span { margin-top: 3px !important; color: #a8a8a8 !important; font-size: 10px !important; }
+.im-dock-queue button { min-height: 27px !important; padding: 0 8px !important; color: #f5f5f5 !important; background: #393939 !important; border: 0 !important; border-radius: 6px !important; font: inherit !important; font-size: 11px !important; cursor: pointer !important; }
+.im-dock-queue button[aria-label] { color: #ffb4ab !important; background: rgba(255,80,70,.15) !important; font-size: 18px !important; }
+@media (max-width: 600px) { .im-creator-dock { top: auto !important; right: 10px !important; bottom: 10px !important; width: calc(100vw - 20px) !important; max-height: min(620px, calc(100vh - 20px)) !important; } }
+@media (prefers-reduced-motion: reduce) { .im-creator-dock { transition: none !important; } }
+
