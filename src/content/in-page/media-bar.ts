@@ -7,7 +7,9 @@ export function initMediaBar() {
   const processedElements = new WeakSet<Element>();
   const reelControls = new WeakMap<HTMLVideoElement, { bar: HTMLElement; scrubber: HTMLElement }>();
   const feedControls = new WeakMap<HTMLElement, { bar: HTMLElement; getActiveMedia: () => HTMLElement | null }>();
-  const pendingDownloads = new Map<string, HTMLElement>();
+  type PendingDownload = { button: HTMLElement; requestId: string; timeout: ReturnType<typeof setTimeout>; downloadId?: number };
+  const pendingDownloads = new Map<string, PendingDownload>();
+  const DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
   let storyBar: HTMLElement | null = null;
   let reqIdCounter = 0;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -82,9 +84,12 @@ export function initMediaBar() {
       const tempAttr = 'data-im-target';
       element.setAttribute(tempAttr, reqId);
 
+      const clearTarget = () => {
+        if (element.getAttribute(tempAttr) === reqId) element.removeAttribute(tempAttr);
+      };
       const timeout = setTimeout(() => {
         window.removeEventListener('message', onMsg);
-        element.removeAttribute(tempAttr);
+        clearTarget();
         const url = getDirectUrl(element);
         resolve(url ? { url } : null);
       }, 1500);
@@ -94,7 +99,7 @@ export function initMediaBar() {
             ev.data.source !== 'insta-manager-resolve-response' || ev.data.requestId !== reqId) return;
         clearTimeout(timeout);
         window.removeEventListener('message', onMsg);
-        element.removeAttribute(tempAttr);
+        clearTarget();
         if (typeof ev.data.unsupportedReason === 'string') {
           resolve({ unsupportedReason: ev.data.unsupportedReason });
           return;
@@ -108,21 +113,35 @@ export function initMediaBar() {
     });
   }
 
+  function removePendingDownload(pending: PendingDownload) {
+    clearTimeout(pending.timeout);
+    pendingDownloads.delete(pending.requestId);
+    if (pending.downloadId !== undefined) pendingDownloads.delete(String(pending.downloadId));
+  }
+
   function triggerDownload(media: ResolvedMedia, filename: string, btn: HTMLElement) {
     const requestId = `im-download-${crypto.randomUUID()}`;
-    pendingDownloads.set(requestId, btn);
+    const pending: PendingDownload = {
+      button: btn,
+      requestId,
+      timeout: setTimeout(() => {
+        removePendingDownload(pending);
+        setButtonState(btn, 'idle');
+        showToast('The download did not finish in time. Check Chrome Downloads and try again.');
+      }, DOWNLOAD_TIMEOUT_MS),
+    };
+    pendingDownloads.set(requestId, pending);
     chrome.runtime.sendMessage({ type: 'DOWNLOAD_MEDIA', data: { ...media, filename, requestId } }, (res) => {
       if (chrome.runtime.lastError) {
-        pendingDownloads.delete(requestId);
+        removePendingDownload(pending);
         setButtonState(btn, 'idle');
         showToast('The extension was reloaded. Refresh Instagram and try again.');
       } else if (res?.success && Number.isInteger(res.downloadId)) {
-        // The terminal worker event contains both IDs. Retain both routes so a
-        // response cannot strand the control when one identifier arrives first.
-        pendingDownloads.set(String(res.downloadId), btn);
+        pending.downloadId = res.downloadId;
+        pendingDownloads.set(String(res.downloadId), pending);
         showToast(`Download in progress: ${filename}`, 90_000);
       } else {
-        pendingDownloads.delete(requestId);
+        removePendingDownload(pending);
         setButtonState(btn, 'idle');
         showToast(res?.error || 'Chrome could not start this download.');
       }
@@ -133,16 +152,14 @@ export function initMediaBar() {
     if (message.type !== 'DOWNLOAD_STATUS' || !message.data) return;
     const requestKey = message.data.requestId;
     const downloadKey = Number.isInteger(message.data.downloadId) ? String(message.data.downloadId) : undefined;
-    const button = (requestKey && pendingDownloads.get(requestKey)) ?? (downloadKey && pendingDownloads.get(downloadKey));
-    if (!button) return;
-    for (const [key, pendingButton] of pendingDownloads) {
-      if (pendingButton === button) pendingDownloads.delete(key);
-    }
+    const pending = (requestKey && pendingDownloads.get(requestKey)) ?? (downloadKey && pendingDownloads.get(downloadKey));
+    if (!pending) return;
+    removePendingDownload(pending);
     if (message.data.status === 'done') {
-      setButtonState(button, 'success');
+      setButtonState(pending.button, 'success');
       showToast('Download completed.');
     } else {
-      setButtonState(button, 'idle');
+      setButtonState(pending.button, 'idle');
       showToast(message.data.error || 'The download was interrupted.');
     }
   });
