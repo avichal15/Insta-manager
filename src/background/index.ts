@@ -427,7 +427,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     await Promise.all([
       AppStorage.set(STORAGE_KEYS.GHOST, defaultGhost),
       AppStorage.set(STORAGE_KEYS.SETTINGS, defaultSettings),
-      AppStorage.set<ScheduledPost[]>(STORAGE_KEYS.SCHEDULED_POSTS, []),
+      AppStorage.set<ScheduleState>(STORAGE_KEYS.SCHEDULED_POSTS, { version: 1, posts: [] }),
       AppStorage.set<DownloadItem[]>(STORAGE_KEYS.DOWNLOADS, []),
     ]);
   }
