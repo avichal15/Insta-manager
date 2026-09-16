@@ -164,6 +164,7 @@ async function releaseMergedMedia(url: string): Promise<void> {
   } catch { /* The offscreen document may have closed during extension reload. */ }
 }
 type ScheduleRequest = {
+  accountId?: string;
   type?: PublishFormat;
   caption?: string;
   scheduledAt?: number;
@@ -307,6 +308,9 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
   if (!caption && !request.mediaName) throw new Error('Add media or a caption before scheduling.');
 
   const accountId = await activeAccountId();
+  if (typeof request.accountId !== 'string' || request.accountId !== accountId) {
+    throw new Error('The active Instagram account changed. Reopen Creator and try again.');
+  }
   const post: ScheduledPost = {
     id: crypto.randomUUID(),
     accountId,

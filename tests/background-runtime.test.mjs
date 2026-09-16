@@ -14,7 +14,7 @@ function worker(initial = {}, options = {}) {
   let cookieListener;
   let offscreenOpen = false;
   let runtimeLastError;
-  const calls = { alarmsCreated: [], alarmsCleared: [], created: [], downloads: [], messages: [], reloadTabs: [], reloads: 0, timers: [] };
+  const calls = { alarmsCreated: [], alarmsCleared: [], created: [], downloads: [], messages: [], notifications: [], reloadTabs: [], reloads: 0, timers: [] };
   const event = { addListener() {} };
   const withStorageError = (callback, value, message) => {
     runtimeLastError = message ? { message } : undefined;
@@ -41,7 +41,7 @@ function worker(initial = {}, options = {}) {
       async clear(name) { calls.alarmsCleared.push(name); return true; },
       async getAll() { return options.alarms ?? []; },
     },
-    notifications: { onClicked: event },
+    notifications: { onClicked: event, async create(name, options) { calls.notifications.push({ name, ...options }); return name; } },
     cookies: {
       onChanged: { addListener(fn) { cookieListener = fn; } },
       async get({ name }) {
@@ -245,7 +245,7 @@ test('built worker isolates schedules by the active Instagram account', async ()
   const first = worker(shared, { userId: '1001' });
   const scheduled = await first.send({
     type: 'SCHEDULE_POST',
-    data: { type: 'post', caption: 'first account', scheduledAt: Date.now() + 60_000, draftId: ' scheduled-fixture ' },
+    data: { accountId: '1001', type: 'post', caption: 'first account', scheduledAt: Date.now() + 60_000, draftId: ' scheduled-fixture ' },
   });
   assert.equal(scheduled.success, true);
   assert.equal(scheduled.post.draftId, 'scheduled-fixture');
@@ -304,9 +304,33 @@ test('built worker rolls back a schedule when alarm creation fails', async () =>
   const host = worker({}, { userId: '1001', alarmCreateError: 'Alarm service unavailable.' });
   const result = await host.send({
     type: 'SCHEDULE_POST',
-    data: { type: 'post', caption: 'must roll back', scheduledAt: Date.now() + 60_000, draftId: 'scheduled-rollback' },
+    data: { accountId: '1001', type: 'post', caption: 'must roll back', scheduledAt: Date.now() + 60_000, draftId: 'scheduled-rollback' },
   });
   assert.equal(result.success, false);
   assert.match(result.error, /Alarm service unavailable/);
   assert.equal(host.values.scheduledPosts.posts.length, 0);
+});
+
+test('built worker delivers an inactive account reminder to its stored owner', async () => {
+  const host = worker({ scheduledPosts: {
+    version: 1,
+    posts: [{ id: 'account-one-post', accountId: '1001', type: 'reel', caption: 'owner one', scheduledAt: Date.now() - 1, mediaName: 'clip.mp4', mediaType: 'video/mp4', status: 'scheduled', createdAt: Date.now() }],
+  } }, { userId: '2002' });
+  host.alarmListener({ name: 'insta-manager-scheduled:account-one-post' });
+  await tick();
+  await tick();
+  assert.equal(host.values.scheduledPosts.posts[0].accountId, '1001');
+  assert.equal(host.values.scheduledPosts.posts[0].status, 'due');
+  assert.equal(host.calls.notifications.length, 1);
+});
+
+test('built worker rejects scheduling after the creator account changes', async () => {
+  const host = worker({}, { userId: '2002' });
+  const result = await host.send({
+    type: 'SCHEDULE_POST',
+    data: { accountId: '1001', type: 'post', caption: 'wrong owner', scheduledAt: Date.now() + 60_000, draftId: 'scheduled-owner-race' },
+  });
+  assert.equal(result.success, false);
+  assert.match(result.error, /account changed/i);
+  assert.equal(host.values.scheduledPosts, undefined);
 });

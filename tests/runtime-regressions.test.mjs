@@ -582,3 +582,26 @@ test('creator retains scheduled media when reminder deletion fails', async (t) =
   assert.ok(await window.InstaManagerDrafts.getDraft('delete-fixture', 'scheduled-draft'));
   assert.match(window.document.getElementById('im-creator-dock').textContent, /Storage unavailable/);
 });
+
+test('creator ignores duplicate schedule clicks while the first request is pending', async (t) => {
+  const window = fixture(t);
+  installContent(window, 'schedule-lock-fixture');
+  let scheduleCalls = 0;
+  window.chrome.runtime.sendMessage = (message, callback) => {
+    if (message.type === 'GET_AUTH') queueMicrotask(() => callback({ isLoggedIn: true, userId: 'schedule-lock-fixture', username: null, avatarUrl: null, csrfToken: null }));
+    else if (message.type === 'GET_SCHEDULED_POSTS') queueMicrotask(() => callback([]));
+    else if (message.type === 'SCHEDULE_POST') { scheduleCalls++; window.setTimeout(() => callback({ success: true }), 25); }
+    else queueMicrotask(() => callback({ success: true }));
+  };
+  window.document.dispatchEvent(new window.CustomEvent('im-open-creator'));
+  await tick();
+  const caption = window.document.getElementById('im-caption-input');
+  caption.value = 'single reminder';
+  caption.dispatchEvent(new window.Event('input', { bubbles: true }));
+  window.document.querySelector('[data-tab="schedule"]').click();
+  const button = window.document.querySelector('[data-schedule]');
+  button.click();
+  button.click();
+  await new Promise((resolve) => window.setTimeout(resolve, 50));
+  assert.equal(scheduleCalls, 1);
+});

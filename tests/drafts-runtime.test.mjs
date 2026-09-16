@@ -47,3 +47,30 @@ test('deleting and cleaning drafts removes their media blobs without crossing ac
   assert.equal((await drafts.getDraft('1001', 'keep')).media.length, 1);
   assert.equal((await drafts.getDraft('2002', 'other')).media.length, 1);
 });
+
+test('draft account quota counts actual stored blob sizes when metadata is understated', async () => {
+  const drafts = api();
+  const accountId = 'understated-blob-account';
+  await drafts.saveDraft(accountId, { id: 'existing', type: 'post', caption: '', createdAt: 1, updatedAt: 1 }, [
+    { id: 'media', name: 'existing.jpg', type: 'image/jpeg', size: 1, blob: new Blob(['x']) },
+  ]);
+  const database = await new Promise((resolve, reject) => {
+    const pending = indexedDB.open('insta-manager-drafts', 1);
+    pending.onsuccess = () => resolve(pending.result);
+    pending.onerror = () => reject(pending.error);
+  });
+  const transaction = database.transaction('media', 'readwrite');
+  transaction.objectStore('media').put({
+    key: `${accountId}:existing:media`, accountId, draftId: 'existing', position: 0,
+    id: 'media', name: 'existing.jpg', type: 'image/jpeg', size: 1,
+    blob: { size: drafts.MAX_ACCOUNT_BYTES },
+  });
+  await new Promise((resolve, reject) => {
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+  database.close();
+  await assert.rejects(drafts.saveDraft(accountId, { id: 'next', type: 'post', caption: '', createdAt: 2, updatedAt: 2 }, [
+    { id: 'next-media', name: 'next.jpg', type: 'image/jpeg', size: 1, blob: new Blob(['y']) },
+  ]), /750 MB/);
+});
