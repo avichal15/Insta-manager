@@ -251,12 +251,13 @@ async function activeAccountId(): Promise<string> {
   return auth.userId;
 }
 
-async function getScheduleState(accountId: string): Promise<ScheduleState> {
+async function getScheduleState(accountId?: string): Promise<ScheduleState> {
   const stored = await AppStorage.get<unknown>(STORAGE_KEYS.SCHEDULED_POSTS);
   if (stored && typeof stored === 'object' && (stored as ScheduleState).version === 1 && Array.isArray((stored as ScheduleState).posts)) {
     return { version: 1, posts: (stored as ScheduleState).posts.filter(isScheduledPost) };
   }
   if (Array.isArray(stored)) {
+    if (!accountId) return { version: 1, posts: [] };
     const posts = stored.filter((post): post is Omit<ScheduledPost, 'accountId'> => {
       if (!post || typeof post !== 'object') return false;
       const candidate = post as Partial<ScheduledPost>;
@@ -322,14 +323,21 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
     posts.push(post);
     posts.sort((a, b) => a.scheduledAt - b.scheduledAt);
   });
-  await chrome.alarms.create(`${SCHEDULE_ALARM_PREFIX}${post.id}`, { when: post.scheduledAt });
+  try {
+    await chrome.alarms.create(`${SCHEDULE_ALARM_PREFIX}${post.id}`, { when: post.scheduledAt });
+  } catch (error) {
+    await mutateSchedules(accountId, (posts) => {
+      const index = posts.findIndex((item) => item.id === post.id);
+      if (index >= 0) posts.splice(index, 1);
+    });
+    throw error;
+  }
   return post;
 }
 
 async function restoreAlarms(): Promise<void> {
   const now = Date.now();
-  const auth = await getAuthState();
-  const posts = auth.isLoggedIn && auth.userId ? await getSchedules(auth.userId) : [];
+  const posts = (await getScheduleState()).posts;
   const desired = new Map(posts
     .filter((post) => post.status === 'scheduled')
     .map((post) => [`${SCHEDULE_ALARM_PREFIX}${post.id}`, post]));
@@ -737,8 +745,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (!alarm.name.startsWith(SCHEDULE_ALARM_PREFIX)) return;
   const id = alarm.name.slice(SCHEDULE_ALARM_PREFIX.length);
   void (async () => {
-    const accountId = await activeAccountId();
-    const post = await mutateSchedules(accountId, (posts) => {
+    const state = await getScheduleState();
+    const stored = state.posts.find((item) => item.id === id);
+    if (!stored) return;
+    const post = await mutateSchedules(stored.accountId, (posts) => {
       const match = posts.find((item) => item.id === id);
       if (match) match.status = 'due';
       return match;

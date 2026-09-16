@@ -526,3 +526,59 @@ test('creator restores caption, format, and ordered media after its content cont
   assert.equal(reloaded.document.querySelector('[data-format="post"]').classList.contains('is-active'), true);
   assert.deepEqual([...reloaded.document.querySelectorAll('[data-media-index] em')].map((item) => item.textContent), ['first.png', 'second.png']);
 });
+
+test('creator appends media selected in separate picker operations', async (t) => {
+  const window = fixture(t);
+  installContent(window, 'append-fixture');
+  window.document.dispatchEvent(new window.CustomEvent('im-open-creator'));
+  await tick();
+  const firstInput = window.document.getElementById('im-file-input');
+  Object.defineProperty(firstInput, 'files', { value: [new window.File(['one'], 'first.png', { type: 'image/png' })] });
+  firstInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const secondInput = window.document.getElementById('im-file-input');
+  Object.defineProperty(secondInput, 'files', { value: [new window.File(['two'], 'second.png', { type: 'image/png' })] });
+  secondInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.deepEqual([...window.document.querySelectorAll('[data-media-index] em')].map((item) => item.textContent), ['first.png', 'second.png']);
+});
+
+test('creator clears the previous account draft when the active Instagram account changes', async (t) => {
+  const window = fixture(t);
+  installContent(window, 'account-one');
+  await window.InstaManagerDrafts.saveDraft('account-one', { id: 'creator-active', type: 'post', caption: 'private first-account caption', createdAt: 1, updatedAt: 1 }, []);
+  let accountId = 'account-one';
+  const originalSend = window.chrome.runtime.sendMessage;
+  window.chrome.runtime.sendMessage = (message, callback) => {
+    if (message.type === 'GET_AUTH') queueMicrotask(() => callback({ isLoggedIn: true, userId: accountId, username: null, avatarUrl: null, csrfToken: null }));
+    else originalSend(message, callback);
+  };
+  window.document.dispatchEvent(new window.CustomEvent('im-open-creator'));
+  await new Promise((resolve) => window.setTimeout(resolve, 50));
+  assert.equal(window.document.getElementById('im-caption-input').value, 'private first-account caption');
+  window.document.querySelector('[data-close]').click();
+  accountId = 'account-two';
+  window.document.dispatchEvent(new window.CustomEvent('im-open-creator'));
+  await new Promise((resolve) => window.setTimeout(resolve, 50));
+  assert.equal(window.document.getElementById('im-caption-input').value, '');
+});
+
+test('creator retains scheduled media when reminder deletion fails', async (t) => {
+  const window = fixture(t);
+  installContent(window, 'delete-fixture');
+  await window.InstaManagerDrafts.saveDraft('delete-fixture', { id: 'scheduled-draft', type: 'post', caption: 'keep me', createdAt: 1, updatedAt: 1 }, [
+    { id: 'media', name: 'keep.png', type: 'image/png', size: 4, blob: new window.Blob(['keep'], { type: 'image/png' }) },
+  ]);
+  const post = { id: 'scheduled-post', accountId: 'delete-fixture', type: 'post', caption: 'keep me', scheduledAt: Date.now() + 60_000, mediaName: 'keep.png', mediaType: 'image/png', draftId: 'scheduled-draft', status: 'scheduled', createdAt: 1 };
+  window.chrome.runtime.sendMessage = (message, callback) => queueMicrotask(() => {
+    if (message.type === 'GET_AUTH') callback({ isLoggedIn: true, userId: 'delete-fixture', username: null, avatarUrl: null, csrfToken: null });
+    else if (message.type === 'GET_SCHEDULED_POSTS') callback([post]);
+    else if (message.type === 'DELETE_SCHEDULED_POST') callback({ success: false, error: 'Storage unavailable.' });
+    else callback({ success: true });
+  });
+  window.document.dispatchEvent(new window.CustomEvent('im-open-creator'));
+  await tick();
+  window.document.querySelector('[data-tab="queue"]').click();
+  window.document.querySelector('[data-delete="scheduled-post"]').click();
+  await tick();
+  assert.ok(await window.InstaManagerDrafts.getDraft('delete-fixture', 'scheduled-draft'));
+  assert.match(window.document.getElementById('im-creator-dock').textContent, /Storage unavailable/);
+});

@@ -37,7 +37,7 @@ function worker(initial = {}, options = {}) {
     } },
     alarms: {
       onAlarm: { addListener(fn) { alarmListener = fn; } },
-      async create(name, config) { calls.alarmsCreated.push({ name, ...config }); },
+      async create(name, config) { calls.alarmsCreated.push({ name, ...config }); if (options.alarmCreateError) throw new Error(options.alarmCreateError); },
       async clear(name) { calls.alarmsCleared.push(name); return true; },
       async getAll() { return options.alarms ?? []; },
     },
@@ -258,7 +258,7 @@ test('built worker isolates schedules by the active Instagram account', async ()
   assert.equal((await restored.send({ type: 'GET_SCHEDULED_POSTS' }))[0].draftId, 'scheduled-fixture');
 });
 
-test('built worker reconciles schedule alarms for only the active account', async () => {
+test('built worker reconciles schedule alarms across every stored account', async () => {
   const future = Date.now() + 60_000;
   const schedules = {
     version: 1,
@@ -279,13 +279,10 @@ test('built worker reconciles schedule alarms for only the active account', asyn
   await tick();
   await tick();
   assert.deepEqual(host.calls.alarmsCreated, [{ name: 'insta-manager-scheduled:active', when: future }]);
-  assert.deepEqual(host.calls.alarmsCleared.sort(), [
-    'insta-manager-scheduled:foreign',
-    'insta-manager-scheduled:orphan',
-  ]);
+  assert.deepEqual(host.calls.alarmsCleared, ['insta-manager-scheduled:orphan']);
 });
 
-test('built worker reconciles alarms immediately after an Instagram account switch', async () => {
+test('built worker keeps all account alarms after an Instagram account switch', async () => {
   const future = Date.now() + 60_000;
   const host = worker({ scheduledPosts: {
     version: 1,
@@ -299,6 +296,17 @@ test('built worker reconciles alarms immediately after an Instagram account swit
   host.cookieListener({ cookie: { domain: '.instagram.com', name: 'sessionid', value: 'new-session' }, removed: false });
   await tick();
   await tick();
-  assert.ok(host.calls.alarmsCleared.includes('insta-manager-scheduled:first'));
+  assert.equal(host.calls.alarmsCleared.includes('insta-manager-scheduled:first'), false);
   assert.ok(host.calls.alarmsCreated.some(({ name }) => name === 'insta-manager-scheduled:second'));
+});
+
+test('built worker rolls back a schedule when alarm creation fails', async () => {
+  const host = worker({}, { userId: '1001', alarmCreateError: 'Alarm service unavailable.' });
+  const result = await host.send({
+    type: 'SCHEDULE_POST',
+    data: { type: 'post', caption: 'must roll back', scheduledAt: Date.now() + 60_000, draftId: 'scheduled-rollback' },
+  });
+  assert.equal(result.success, false);
+  assert.match(result.error, /Alarm service unavailable/);
+  assert.equal(host.values.scheduledPosts.posts.length, 0);
 });
