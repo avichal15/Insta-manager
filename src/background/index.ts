@@ -279,13 +279,22 @@ async function schedulePost(request: ScheduleRequest): Promise<ScheduledPost> {
 
 async function restoreAlarms(): Promise<void> {
   const now = Date.now();
-  const posts = await getSchedules();
-  await Promise.all(posts
+  const accountId = await activeAccountId();
+  const posts = await getSchedules(accountId);
+  const desired = new Map(posts
     .filter((post) => post.status === 'scheduled')
-    .map((post) => chrome.alarms.create(
-      `${SCHEDULE_ALARM_PREFIX}${post.id}`,
-      { when: Math.max(post.scheduledAt, now + 500) },
-    )));
+    .map((post) => [`${SCHEDULE_ALARM_PREFIX}${post.id}`, post]));
+  const existing = await chrome.alarms.getAll();
+  const existingNames = new Set(existing.map((alarm) => alarm.name));
+
+  await Promise.all(existing
+    .filter((alarm) => alarm.name.startsWith(SCHEDULE_ALARM_PREFIX) && !desired.has(alarm.name))
+    .map((alarm) => chrome.alarms.clear(alarm.name)));
+  await Promise.all([...desired]
+    .filter(([name]) => !existingNames.has(name))
+    .map(([name, post]) => chrome.alarms.create(name, {
+      when: Math.max(post.scheduledAt, now + 500),
+    })));
 }
 
 async function addDownload(item: DownloadItem): Promise<void> {

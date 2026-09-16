@@ -10,9 +10,10 @@ function worker(initial = {}, options = {}) {
   const values = { ...initial };
   let listener;
   let downloadListener;
+  let alarmListener;
   let offscreenOpen = false;
   let runtimeLastError;
-  const calls = { created: [], downloads: [], messages: [], reloadTabs: [], reloads: 0, timers: [] };
+  const calls = { alarmsCreated: [], alarmsCleared: [], created: [], downloads: [], messages: [], reloadTabs: [], reloads: 0, timers: [] };
   const event = { addListener() {} };
   const withStorageError = (callback, value, message) => {
     runtimeLastError = message ? { message } : undefined;
@@ -33,7 +34,12 @@ function worker(initial = {}, options = {}) {
       set(patch, callback) { if (!options.storageSetError) Object.assign(values, patch); withStorageError(callback, undefined, options.storageSetError); return Promise.resolve(); },
       remove(key, callback) { delete values[key]; withStorageError(callback); return Promise.resolve(); },
     } },
-    alarms: { onAlarm: event, async create() {} },
+    alarms: {
+      onAlarm: { addListener(fn) { alarmListener = fn; } },
+      async create(name, config) { calls.alarmsCreated.push({ name, ...config }); },
+      async clear(name) { calls.alarmsCleared.push(name); return true; },
+      async getAll() { return options.alarms ?? []; },
+    },
     notifications: { onClicked: event },
     cookies: {
       onChanged: event,
@@ -60,7 +66,7 @@ function worker(initial = {}, options = {}) {
   };
   vm.runInNewContext(source, { chrome, URL, Headers, crypto, console, setTimeout(fn) { calls.timers.push(fn); } });
   return {
-    calls, values, downloadListener,
+    calls, values, downloadListener, alarmListener,
     send(message, sender = { id: 'fixture', tab: { id: 7 }, url: 'https://www.instagram.com/reels/' }) {
       return new Promise((resolve) => listener(message, sender, resolve));
     },
@@ -162,4 +168,31 @@ test('built worker isolates schedules by the active Instagram account', async ()
   assert.equal(JSON.stringify(await second.send({ type: 'GET_SCHEDULED_POSTS' })), '[]');
   const restored = worker(shared, { userId: '1001' });
   assert.equal((await restored.send({ type: 'GET_SCHEDULED_POSTS' }))[0].caption, 'first account');
+});
+
+test('built worker reconciles schedule alarms for only the active account', async () => {
+  const future = Date.now() + 60_000;
+  const schedules = {
+    version: 1,
+    posts: [
+      { id: 'active', accountId: '1001', type: 'post', caption: 'active', scheduledAt: future, mediaName: null, mediaType: null, status: 'scheduled', createdAt: Date.now() },
+      { id: 'foreign', accountId: '2002', type: 'reel', caption: 'foreign', scheduledAt: future, mediaName: null, mediaType: null, status: 'scheduled', createdAt: Date.now() },
+      { id: 'due', accountId: '1001', type: 'story', caption: 'due', scheduledAt: future, mediaName: null, mediaType: null, status: 'due', createdAt: Date.now() },
+    ],
+  };
+  const host = worker({ scheduledPosts: schedules }, {
+    userId: '1001',
+    alarms: [
+      { name: 'insta-manager-scheduled:foreign' },
+      { name: 'insta-manager-scheduled:orphan' },
+      { name: 'unrelated-extension-alarm' },
+    ],
+  });
+  await tick();
+  await tick();
+  assert.deepEqual(host.calls.alarmsCreated, [{ name: 'insta-manager-scheduled:active', when: future }]);
+  assert.deepEqual(host.calls.alarmsCleared.sort(), [
+    'insta-manager-scheduled:foreign',
+    'insta-manager-scheduled:orphan',
+  ]);
 });
