@@ -70,17 +70,30 @@ function parseDownloadState(stored: unknown): DownloadState | null {
 
 async function getDownloadState(accountId: string): Promise<DownloadState> {
   const stored = await AppStorage.get<unknown>(STORAGE_KEYS.DOWNLOADS);
-  return parseDownloadState(stored) ?? { version: 1, accounts: { [accountId]: Array.isArray(stored) ? stored.filter(isDownloadItem).slice(0, 50) : [] } };
+  const versioned = parseDownloadState(stored);
+  if (versioned) return versioned;
+  const migrated: DownloadState = { version: 1, accounts: { [accountId]: Array.isArray(stored) ? stored.filter(isDownloadItem).slice(0, 50) : [] } };
+  await AppStorage.set(STORAGE_KEYS.DOWNLOADS, migrated);
+  return migrated;
+}
+
+function isAudienceSnapshot(value: unknown): value is AudienceSnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = value as Partial<AudienceSnapshot>;
+  return ['scannedAt', 'followerCount', 'followingCount', 'scannedFollowers', 'scannedFollowing'].every((key) => typeof snapshot[key as keyof AudienceSnapshot] === 'number')
+    && typeof snapshot.limited === 'boolean'
+    && ['followers', 'following', 'nonFollowers', 'suspiciousFollowers', 'gainedFollowers', 'lostFollowers'].every((key) => Array.isArray(snapshot[key as keyof AudienceSnapshot]));
 }
 
 async function getAudienceState(accountId: string): Promise<AudienceState> {
   const stored = await AppStorage.get<unknown>(STORAGE_KEYS.AUDIENCE_SNAPSHOT);
   if (stored && typeof stored === 'object' && (stored as Partial<AudienceState>).version === 1) {
     const accounts = (stored as Partial<AudienceState>).accounts;
-    if (accounts && typeof accounts === 'object') return { version: 1, accounts: accounts as Record<string, AudienceSnapshot> };
+    if (accounts && typeof accounts === 'object') return { version: 1, accounts: Object.fromEntries(Object.entries(accounts).filter(([, snapshot]) => isAudienceSnapshot(snapshot))) };
   }
-  const legacy = stored && typeof stored === 'object' && typeof (stored as Partial<AudienceSnapshot>).scannedAt === 'number' ? stored as AudienceSnapshot : undefined;
-  return { version: 1, accounts: legacy ? { [accountId]: legacy } : {} };
+  const migrated: AudienceState = { version: 1, accounts: isAudienceSnapshot(stored) ? { [accountId]: stored } : {} };
+  await AppStorage.set(STORAGE_KEYS.AUDIENCE_SNAPSHOT, migrated);
+  return migrated;
 }
 
 function mutateDownloads(operation: () => Promise<void>): Promise<void> {

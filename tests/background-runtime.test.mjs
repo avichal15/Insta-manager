@@ -114,6 +114,34 @@ test('built worker updates a pending download after Instagram logout', async () 
   assert.equal(downloads[0].status, 'done');
 });
 
+test('built worker migrates legacy downloads into only the active account', async () => {
+  const legacy = [{ id: 'old', url: 'https://cdninstagram.com/old.jpg', filename: 'old.jpg', type: 'image/jpeg', status: 'done', createdAt: 10, downloadId: 7 }];
+  const first = worker({ downloads: legacy }, { userId: '1001' });
+  assert.equal((await first.send({ type: 'GET_DOWNLOADS' }))[0].filename, 'old.jpg');
+  const second = worker(first.values, { userId: '2002' });
+  assert.equal(JSON.stringify(await second.send({ type: 'GET_DOWNLOADS' })), '[]');
+});
+
+test('built worker recovers safely from malformed account activity state', async () => {
+  const host = worker({
+    downloads: { version: 1, accounts: { '1001': [{ id: 7 }] } },
+    audienceSnapshot: { version: 1, accounts: { '1001': { scannedAt: 'never' } } },
+  }, { userId: '1001' });
+  assert.equal(JSON.stringify(await host.send({ type: 'GET_DOWNLOADS' })), '[]');
+  assert.equal(await host.send({ type: 'GET_AUDIENCE_SNAPSHOT' }), null);
+});
+
+test('built worker migrates a legacy audience snapshot into only the active account', async () => {
+  const snapshot = {
+    scannedAt: 123, followerCount: 1, followingCount: 0, scannedFollowers: 1, scannedFollowing: 0, limited: false,
+    followers: [], following: [], nonFollowers: [], suspiciousFollowers: [], gainedFollowers: [], lostFollowers: [],
+  };
+  const first = worker({ audienceSnapshot: snapshot }, { userId: '1001' });
+  assert.equal((await first.send({ type: 'GET_AUDIENCE_SNAPSHOT' })).scannedAt, 123);
+  const second = worker(first.values, { userId: '2002' });
+  assert.equal(await second.send({ type: 'GET_AUDIENCE_SNAPSHOT' }), null);
+});
+
 test('built worker keeps audience snapshots isolated by Instagram account', async () => {
   const snapshot = {
     scannedAt: 123,
